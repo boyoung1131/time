@@ -1,4 +1,4 @@
-type MerkleTree @entity {
+type MerkleTree @entity(immutable: true) {
     id: ID!
     depth: Int!
     root: BigInt
@@ -6,7 +6,7 @@ type MerkleTree @entity {
     group: Group!
 }
 
-type Group @entity {
+type Group @entity(immutable: true) {
     id: ID!
     timestamp: BigInt!
     merkleTree: MerkleTree!
@@ -15,7 +15,7 @@ type Group @entity {
     validatedProofs: [ValidatedProof!] @derivedFrom(field: "group")
 }
 
-type Member @entity {
+type Member @entity(immutable: true) {
     id: ID!
     timestamp: BigInt!
     identityCommitment: BigInt!
@@ -23,7 +23,7 @@ type Member @entity {
     group: Group!
 }
 
-type ValidatedProof @entity {
+type ValidatedProof @entity(immutable: true) {
     id: ID!
     timestamp: BigInt!
     message: BigInt!
