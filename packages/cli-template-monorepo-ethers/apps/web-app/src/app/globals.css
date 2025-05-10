@@ -356,8 +356,18 @@ a:hover {
     margin-left: 0.5rem;
 }
 
+.highlight-box {
+    background-color: #f9f871;
+    color: #000;
+    font-weight: bold;
+    border: 2px solid #e6d100;
+    padding: 1rem;
+    margin-top: 1rem;
+}
+
 @keyframes spin {
     to {
         transform: rotate(360deg);
     }
 }
+

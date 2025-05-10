@@ -20,19 +20,29 @@ export async function POST(req: NextRequest) {
     const signer = new Wallet(ethereumPrivateKey, provider)
     const contract = new Contract(contractAddress, Feedback.abi, signer)
 
-    const { feedback, merkleTreeDepth, merkleTreeRoot, nullifier, points } = await req.json()
+    const { candidateId, merkleTreeDepth, merkleTreeRoot, nullifier, points } = await req.json()
 
     try {
-        const transaction = await contract.sendFeedback(merkleTreeDepth, merkleTreeRoot, nullifier, feedback, points)
+        const tx = await contract.sendVote(merkleTreeDepth, merkleTreeRoot, nullifier, candidateId, points)
+        await tx.wait()
 
-        await transaction.wait()
+        const votesFor1 = await contract.getVotes(1)
+        const votesFor2 = await contract.getVotes(2)
+        const votesFor3 = await contract.getVotes(3)
 
-        return new Response("Success", { status: 200 })
+        const totalVotes = votesFor1 + votesFor2 + votesFor3
+
+        if (totalVotes >= 3) {
+            const result = `Final Result:
+Candidate 1: ${votesFor1} 
+Candidate 2: ${votesFor2} 
+Candidate 3: ${votesFor3} `
+            return new Response(result, { status: 200 })
+        } else {
+            return new Response(`Voted for #${candidateId}`, { status: 200 })
+        }
     } catch (error: any) {
         console.error(error)
-
-        return new Response(`Server error: ${error}`, {
-            status: 500
-        })
+        return new Response(`Server error: ${error}`, { status: 500 })
     }
 }

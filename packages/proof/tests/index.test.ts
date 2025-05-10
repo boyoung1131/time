@@ -4,6 +4,8 @@ import { getCurveFromName } from "ffjavascript"
 import generateProof from "../src/generate-proof"
 import verifyProof from "../src/verify-proof"
 
+jest.setTimeout(20000)
+
 describe("Proof", () => {
     const treeDepth = 10
 

@@ -18,6 +18,8 @@ task("deploy", "Deploy a Feedback contract")
 
         if (logs) {
             console.info(`Feedback contract has been deployed to: ${await feedbackContract.getAddress()}`)
+            const groupId = await feedbackContract.groupId()
+            console.info(`→ Automatically created groupId: ${groupId.toString()}`)
         }
 
         return feedbackContract

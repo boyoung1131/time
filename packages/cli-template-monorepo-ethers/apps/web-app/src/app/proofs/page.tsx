@@ -4,10 +4,8 @@ import Stepper from "@/components/Stepper"
 import { useLogContext } from "@/context/LogContext"
 import { useSemaphoreContext } from "@/context/SemaphoreContext"
 import { generateProof, Group } from "@semaphore-protocol/core"
-import { encodeBytes32String, ethers } from "ethers"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import Feedback from "../../../contract-artifacts/Feedback.json"
 import useSemaphoreIdentity from "@/hooks/useSemaphoreIdentity"
 
 export default function ProofsPage() {
@@ -16,6 +14,8 @@ export default function ProofsPage() {
     const { _users, _feedback, refreshFeedback, addFeedback } = useSemaphoreContext()
     const [_loading, setLoading] = useState(false)
     const { _identity } = useSemaphoreIdentity()
+    const [candidateId,setCandidateId] = useState(1)
+    
 
     useEffect(() => {
         if (_feedback.length > 0) {
@@ -26,108 +26,58 @@ export default function ProofsPage() {
     const feedback = useMemo(() => [..._feedback].reverse(), [_feedback])
 
     const sendFeedback = useCallback(async () => {
-        if (!_identity) {
-            return
-        }
+        if (!_identity || !_users) return
 
-        const feedback = prompt("Please enter your feedback:")
+        setLoading(true)
+        setLog("Posting your anonymous votes...")
 
-        if (feedback && _users) {
-            setLoading(true)
+        try {
+            const group = new Group(_users)
 
-            setLog(`Posting your anonymous feedback...`)
+            const { points, merkleTreeDepth, merkleTreeRoot, nullifier } = await generateProof(
+                _identity,
+                group,
+                candidateId.toString(),
+                process.env.NEXT_PUBLIC_GROUP_ID as string
+            )
 
-            try {
-                const group = new Group(_users)
+            const response = await fetch("api/feedback", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    merkleTreeDepth,
+                    merkleTreeRoot,
+                    nullifier,
+                    candidateId,
+                    points
+                })
+            })
+             
+            if (response.status === 200) {
+                addFeedback(`Vote for Candidate #${candidateId}`)
 
-                const message = encodeBytes32String(feedback)
-
-                const { points, merkleTreeDepth, merkleTreeRoot, nullifier } = await generateProof(
-                    _identity,
-                    group,
-                    message,
-                    process.env.NEXT_PUBLIC_GROUP_ID as string
-                )
-
-                let feedbackSent: boolean = false
-                const params = [merkleTreeDepth, merkleTreeRoot, nullifier, message, points]
-                if (process.env.NEXT_PUBLIC_OPENZEPPELIN_AUTOTASK_WEBHOOK) {
-                    const response = await fetch(process.env.NEXT_PUBLIC_OPENZEPPELIN_AUTOTASK_WEBHOOK, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            abi: Feedback.abi,
-                            address: process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS,
-                            functionName: "sendFeedback",
-                            functionParameters: params
-                        })
-                    })
-
-                    if (response.status === 200) {
-                        feedbackSent = true
-                    }
-                } else if (
-                    process.env.NEXT_PUBLIC_GELATO_RELAYER_ENDPOINT &&
-                    process.env.NEXT_PUBLIC_GELATO_RELAYER_CHAIN_ID &&
-                    process.env.GELATO_RELAYER_API_KEY
-                ) {
-                    const iface = new ethers.Interface(Feedback.abi)
-                    const request = {
-                        chainId: process.env.NEXT_PUBLIC_GELATO_RELAYER_CHAIN_ID,
-                        target: process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS,
-                        data: iface.encodeFunctionData("sendFeedback", params),
-                        sponsorApiKey: process.env.GELATO_RELAYER_API_KEY
-                    }
-                    const response = await fetch(process.env.NEXT_PUBLIC_GELATO_RELAYER_ENDPOINT, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(request)
-                    })
-
-                    if (response.status === 201) {
-                        feedbackSent = true
-                    }
-                } else {
-                    const response = await fetch("api/feedback", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            feedback: message,
-                            merkleTreeDepth,
-                            merkleTreeRoot,
-                            nullifier,
-                            points
-                        })
-                    })
-
-                    if (response.status === 200) {
-                        feedbackSent = true
-                    }
+                const text = await response.text()
+                if (text.includes("Candidate")) {
+                    addFeedback(`${text}`)
                 }
-
-                if (feedbackSent) {
-                    addFeedback(feedback)
-
-                    setLog(`Your feedback has been posted 🎉`)
-                } else {
-                    setLog("Some error occurred, please try again!")
-                }
-            } catch (error) {
-                console.error(error)
-
-                setLog("Some error occurred, please try again!")
-            } finally {
-                setLoading(false)
-            }
+                setLog("Your votes have been posted 🎉")
+            } else {
+                setLog("Some error occurred while voting, please try again!")
+            } 
+        } catch (error: any) {
+            console.error("Voting error:", error)
+            setLog("Some error occurred, please try again!")
+        } finally {
+            setLoading(false)
         }
-    }, [_identity, _users, addFeedback, setLoading, setLog])
+    }, [_identity, _users, candidateId, addFeedback, setLog])
 
     return (
         <>
             <h2>Proofs</h2>
 
             <p>
-                Semaphore members can anonymously{" "}
+                Semaphore members can anonymously {" "}
                 <a
                     href="https://docs.semaphore.pse.dev/guides/proofs"
                     target="_blank"
@@ -135,14 +85,13 @@ export default function ProofsPage() {
                 >
                     prove
                 </a>{" "}
-                that they are part of a group and send their anonymous messages. Messages could be votes, leaks,
-                reviews, feedback, etc.
+                that they are part of a group and send their anonymous messages. In this case, anonymous votes.
             </p>
 
             <div className="divider"></div>
 
             <div className="text-top">
-                <h3>Feedback ({_feedback.length})</h3>
+                <h3>Votes ({_feedback.length})</h3>
                 <button className="refresh-button" onClick={refreshFeedback}>
                     <span className="refresh-span">
                         <svg viewBox="0 0 24 24" focusable="false" className="refresh-icon">
@@ -156,11 +105,22 @@ export default function ProofsPage() {
                 </button>
             </div>
 
+            <div style={{ marginBottom: "1rem" }}>
+                <label>Select Candidate: </label>
+                <select value={candidateId} onChange={(e) => setCandidateId(parseInt(e.target.value))}>
+                    <option value={1}>Candidate 1</option>
+                    <option value={2}>Candidate 2</option>
+                    <option value={3}>Candidate 3</option>
+                </select>
+            </div>
+
             {feedback.length > 0 && (
                 <div className="feedback-wrapper">
                     {feedback.map((f, i) => (
                         <div key={i}>
-                            <p className="box box-text">{f}</p>
+                            <p className={`box box-text ${f.startsWith("# Final Result") ? "highlight-box" : ""}`}>
+                                {f}
+                            </p>
                         </div>
                     ))}
                 </div>
@@ -168,7 +128,7 @@ export default function ProofsPage() {
 
             <div className="send-feedback-button">
                 <button className="button" onClick={sendFeedback} disabled={_loading}>
-                    <span>Send Feedback</span>
+                    <span>{_loading ? "Submitting..." : "Send Vote"}</span>
                     {_loading && <div className="loader"></div>}
                 </button>
             </div>
