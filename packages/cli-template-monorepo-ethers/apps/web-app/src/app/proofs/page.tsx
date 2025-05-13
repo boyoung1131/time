@@ -96,7 +96,7 @@ export default function ProofsPage() {
       <div className="text-top">
         <h3>Votes ({_feedback.length})</h3>
         <button className="refresh-button" onClick={refreshFeedback}>
-          🔄 Refresh
+          Refresh
         </button>
       </div>
 
@@ -124,14 +124,43 @@ export default function ProofsPage() {
 
       {/* 歷史投票紀錄 */}
       {feedback.length > 0 && (
-        <div className="feedback-wrapper">
-          {feedback.map((entry, i) => (
-            <div key={i}>
-              <p className="box box-text">
-                Round {entry.round}: {entry.text}
-              </p>
-            </div>
-          ))}
+        <div className="fedback-wraper"
+          style={{
+            maxHeight:"500px",
+            overflowY:"auto",
+            marginBottom: "1rem"
+          }}
+        >
+          {feedback.map((entry, i) => {
+            let display = entry.text
+              if (entry.round === 1 && entry.text.startsWith("Final Result")) {
+                const parts = entry.text
+                  .replace("Final Result:", "")
+                  .trim()
+                  .split("Candidate ")
+                  .filter(p => p)
+        
+                let maxCount = -1
+                let winnerId = ""
+                parts.forEach(p => {
+                  const [id, cnt] = p.split(":").map(s => s.trim())
+                  const num = Number(cnt)
+                  if (num > maxCount) {
+                    maxCount = num
+                    winnerId = id
+                  }
+                })
+                display = `Winner: Candidate ${winnerId}`
+              }
+
+              return (
+                <div key={i}>
+                  <p className="box box-text">
+                    Round {entry.round}: {display}
+                  </p>
+                </div>
+              )
+            })}
         </div>
       )}
 
