@@ -2,138 +2,166 @@ import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers"
 import { Group, Identity, generateProof } from "@semaphore-protocol/core"
 import { expect } from "chai"
 import { run } from "hardhat"
-// @ts-ignore: typechain folder will be generated after contracts compilation
+// typechain
 import { Feedback, ISemaphore } from "../typechain-types"
 
-describe("Feedback (3 candidates)", () => {
-    async function deployFeedbackFixture() {
-        const { semaphore } = await run("deploy:semaphore", { logs: false })
+describe("Feedback (Multi-Round)", () => {
+  async function deployFeedbackFixture() {
+    // 部署 Semaphore
+    const { semaphore } = await run("deploy:semaphore", { logs: false })
+    const semaphoreContract: ISemaphore = semaphore
 
-        const semaphoreContract: ISemaphore = semaphore
-
-        const feedbackContract: Feedback = await run("deploy", {
-            logs: false,
-            semaphore: await semaphoreContract.getAddress()
-        })
-
-        const groupId = await feedbackContract.groupId()
-
-        return { semaphoreContract, feedbackContract, groupId }
-    }
-
-    describe("# joinGroup", () => {
-        it("Should allow users to join the group", async () => {
-            const { semaphoreContract, feedbackContract, groupId } = await loadFixture(deployFeedbackFixture)
-
-            const users = [new Identity(), new Identity()]
-            const group = new Group()
-
-            for (const [i, user] of users.entries()) {
-                const tx = await feedbackContract.joinGroup(user.commitment)
-                group.addMember(user.commitment)
-
-                await expect(tx)
-                    .to.emit(semaphoreContract, "MemberAdded")
-                    .withArgs(groupId, i, user.commitment, group.root)
-            }
-        })
+    // 部署 Feedback
+    const feedbackContract: Feedback = await run("deploy", {
+      logs: false,
+      semaphore: await semaphoreContract.getAddress()
     })
 
-    describe("# sendVote", () => {
-        it("Should allow voting for candidate 3", async () => {
-            const { semaphoreContract, feedbackContract, groupId } = await loadFixture(deployFeedbackFixture)
+    return { semaphoreContract, feedbackContract }
+  }
 
-            const voter = new Identity()
-            const group = new Group()
+  describe("Multi-round voting", () => {
+    it("Should allow one vote in each round", async () => {
+      const { semaphoreContract, feedbackContract } = await loadFixture(deployFeedbackFixture)
 
-            await feedbackContract.joinGroup(voter.commitment)
-            group.addMember(voter.commitment)
+      // 準備一個選民
+      const user = new Identity()
+      const group = new Group()
 
-            const candidateId = 3
-            const proof = await generateProof(voter, group, candidateId, groupId)
+      // 註冊到 on-chain group
+      await feedbackContract.joinGroup(user.commitment)
+      group.addMember(user.commitment)
 
-            const tx = feedbackContract.sendVote(
-                proof.merkleTreeDepth,
-                proof.merkleTreeRoot,
-                proof.nullifier,
-                candidateId,
-                proof.points
-            )
+      const candidate = 2
 
-            await expect(tx)
-                .to.emit(semaphoreContract, "ProofValidated")
-                .withArgs(
-                    groupId,
-                    proof.merkleTreeDepth,
-                    proof.merkleTreeRoot,
-                    proof.nullifier,
-                    candidateId,
-                    groupId,
-                    proof.points
-                )
+      // ---- Round 1 ----
+      const round1 = 1
+      const proof1 = await generateProof(
+        user,
+        group,
+        candidate.toString(),  // signal = 候選人編號
+        round1.toString()      // scope = 輪次
+      )
 
-            const votes = await feedbackContract.getVotes(3)
-            expect(votes).to.equal(1)
+      // 傳入 depth, root, nullifier, candidate, round, points
+      await expect(
+        feedbackContract.sendVote(
+          proof1.merkleTreeDepth,
+          proof1.merkleTreeRoot,
+          proof1.nullifier,
+          candidate,
+          round1,
+          proof1.points
+        )
+      )
+      .to.emit(semaphoreContract, "ProofValidated")
+      .withArgs(
+        await feedbackContract.groupId(),
+        proof1.merkleTreeDepth,
+        proof1.merkleTreeRoot,
+        proof1.nullifier,
+        candidate,
+        round1,
+        proof1.points
+      )
 
-            const total = await feedbackContract.totalVotes()
-            expect(total).to.equal(1)
+      // 讀回 Round1 的票數
+      const votes1 = await feedbackContract.getVotes(round1, candidate)
+      expect(votes1).to.equal(1)
 
-            const winner = await feedbackContract.getFinalResult()
-            expect(winner).to.equal(3)
-        })
+      // ---- Round 2 ----
+      const round2 = 2
+      const proof2 = await generateProof(
+        user,
+        group,
+        candidate.toString(),
+        round2.toString()
+      )
 
-        it("Should reject invalid candidateId (e.g. 4)", async () => {
-            const { feedbackContract, groupId } = await loadFixture(deployFeedbackFixture)
+      await expect(
+        feedbackContract.sendVote(
+          proof2.merkleTreeDepth,
+          proof2.merkleTreeRoot,
+          proof2.nullifier,
+          candidate,
+          round2,
+          proof2.points
+        )
+      ).to.emit(semaphoreContract, "ProofValidated")
 
-            const voter = new Identity()
-            const group = new Group()
-
-            await feedbackContract.joinGroup(voter.commitment)
-            group.addMember(voter.commitment)
-
-            const invalidCandidateId = 4
-            const proof = await generateProof(voter, group, invalidCandidateId, groupId)
-
-            await expect(
-                feedbackContract.sendVote(
-                    proof.merkleTreeDepth,
-                    proof.merkleTreeRoot,
-                    proof.nullifier,
-                    invalidCandidateId,
-                    proof.points
-                )
-            ).to.be.revertedWith("Invalid candidate")
-        })
-
-        it("Should reject duplicate votes (same nullifier)", async () => {
-            const { feedbackContract, groupId } = await loadFixture(deployFeedbackFixture)
-
-            const voter = new Identity()
-            const group = new Group()
-
-            await feedbackContract.joinGroup(voter.commitment)
-            group.addMember(voter.commitment)
-
-            const candidateId = 2
-            const proof = await generateProof(voter, group, candidateId, groupId)
-
-            await feedbackContract.sendVote(
-                proof.merkleTreeDepth,
-                proof.merkleTreeRoot,
-                proof.nullifier,
-                candidateId,
-                proof.points
-            )
-
-            await expect(
-                feedbackContract.sendVote(
-                    proof.merkleTreeDepth,
-                    proof.merkleTreeRoot,
-                    proof.nullifier,
-                    candidateId,
-                    proof.points
-                )
-            ).to.be.revertedWith("Duplicate vote")
-        })
+      const votes2 = await feedbackContract.getVotes(round2, candidate)
+      expect(votes2).to.equal(1)
     })
+
+    it("Should reject duplicate vote in same round", async () => {
+      const { feedbackContract } = await loadFixture(deployFeedbackFixture)
+
+      const user = new Identity()
+      const group = new Group()
+
+      await feedbackContract.joinGroup(user.commitment)
+      group.addMember(user.commitment)
+
+      const candidate = 3
+      const round1 = 1
+      const proof = await generateProof(
+        user,
+        group,
+        candidate.toString(),
+        round1.toString()
+      )
+
+      // 第一次投票
+      await feedbackContract.sendVote(
+        proof.merkleTreeDepth,
+        proof.merkleTreeRoot,
+        proof.nullifier,
+        candidate,
+        round1,
+        proof.points
+      )
+
+      // 第二次用同一 nullifier & 同一 round 要被拒
+      await expect(
+        feedbackContract.sendVote(
+          proof.merkleTreeDepth,
+          proof.merkleTreeRoot,
+          proof.nullifier,
+          candidate,
+          round1,
+          proof.points
+        )
+      ).to.be.revertedWith("Duplicate vote")
+    })
+
+    it("Should reject invalid candidateId", async () => {
+      const { feedbackContract } = await loadFixture(deployFeedbackFixture)
+
+      const user = new Identity()
+      const group = new Group()
+
+      await feedbackContract.joinGroup(user.commitment)
+      group.addMember(user.commitment)
+
+      const invalidCandidate = 99
+      const round1 = 1
+      const proof = await generateProof(
+        user,
+        group,
+        invalidCandidate.toString(),
+        round1.toString()
+      )
+
+      await expect(
+        feedbackContract.sendVote(
+          proof.merkleTreeDepth,
+          proof.merkleTreeRoot,
+          proof.nullifier,
+          invalidCandidate,
+          round1,
+          proof.points
+        )
+      ).to.be.revertedWith("Invalid candidate")
+    })
+  })
 })

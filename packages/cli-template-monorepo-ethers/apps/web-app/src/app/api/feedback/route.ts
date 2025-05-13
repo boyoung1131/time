@@ -1,5 +1,5 @@
 import { Contract, InfuraProvider, JsonRpcProvider, Wallet } from "ethers"
-import { NextRequest } from "next/server"
+import { NextRequest} from "next/server"
 import Feedback from "../../../../contract-artifacts/Feedback.json"
 
 export async function POST(req: NextRequest) {
@@ -20,29 +20,35 @@ export async function POST(req: NextRequest) {
     const signer = new Wallet(ethereumPrivateKey, provider)
     const contract = new Contract(contractAddress, Feedback.abi, signer)
 
-    const { candidateId, merkleTreeDepth, merkleTreeRoot, nullifier, points } = await req.json()
+    const { merkleTreeDepth, merkleTreeRoot, nullifier, candidateId, points, round } = await req.json()
 
     try {
-        const tx = await contract.sendVote(merkleTreeDepth, merkleTreeRoot, nullifier, candidateId, points)
+        const tx = await contract.sendVote(
+            merkleTreeDepth,
+            merkleTreeRoot,
+            nullifier,
+            candidateId,
+            round,
+            points
+        )
         await tx.wait()
 
-        const votesFor1 = await contract.getVotes(1)
-        const votesFor2 = await contract.getVotes(2)
-        const votesFor3 = await contract.getVotes(3)
-
+        const votesFor1 = Number(await contract.getVotes(round, 1))
+        const votesFor2 = Number(await contract.getVotes(round, 2))
+        const votesFor3 = Number(await contract.getVotes(round, 3))
         const totalVotes = votesFor1 + votesFor2 + votesFor3
 
         if (totalVotes >= 3) {
             const result = `Final Result:
-Candidate 1: ${votesFor1} 
-Candidate 2: ${votesFor2} 
-Candidate 3: ${votesFor3} `
+Candidate 1: ${votesFor1}
+Candidate 2: ${votesFor2}
+Candidate 3: ${votesFor3}`
             return new Response(result, { status: 200 })
         } else {
-            return new Response(`Voted for #${candidateId}`, { status: 200 })
+            return new Response(`Voted for #${candidateId} in round ${round}`, { status: 200 })
         }
     } catch (error: any) {
-        console.error(error)
+        console.error("Voting error:", error)
         return new Response(`Server error: ${error}`, { status: 500 })
     }
 }

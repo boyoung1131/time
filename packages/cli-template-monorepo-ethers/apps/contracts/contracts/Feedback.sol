@@ -9,10 +9,10 @@ contract Feedback {
     uint256 public groupId;
     uint256 public candidateCount;
 
-    mapping(uint256 => uint256) public votes; // candidateId => vote count
-    mapping(uint256 => bool) public nullifiers; // nullifier => used or not
+    mapping(uint256 => mapping(uint256 => uint256)) public votes;
+    mapping(uint256 => mapping(uint256 => bool)) public nullifiers;
 
-    event VoteSubmitted(uint256 indexed nullifier, uint256 candidateId);
+    event VoteSubmitted(uint256 indexed roundId, uint256 indexed nullifier, uint256 candidateId);
 
     constructor(address semaphoreAddress) {
         semaphore = ISemaphore(semaphoreAddress);
@@ -29,50 +29,49 @@ contract Feedback {
         uint256 merkleTreeRoot,
         uint256 nullifier,
         uint256 candidateId,
+        uint256 externalNullifier,
         uint256[8] calldata points
     ) external {
         require(candidateId >= 1 && candidateId <= candidateCount, "Invalid candidate");
-        require(!nullifiers[nullifier], "Duplicate vote");
+        require(!nullifiers[externalNullifier][nullifier], "Duplicate vote");
 
         ISemaphore.SemaphoreProof memory proof = ISemaphore.SemaphoreProof(
             merkleTreeDepth,
             merkleTreeRoot,
             nullifier,
             candidateId,
-            groupId,
+            externalNullifier,
             points
         );
 
         semaphore.validateProof(groupId, proof);
 
-        nullifiers[nullifier] = true;
-        votes[candidateId]++;
+        nullifiers[externalNullifier][nullifier] = true;
+        votes[externalNullifier][candidateId]++;
 
-        emit VoteSubmitted(nullifier, candidateId);
+        emit VoteSubmitted(externalNullifier, nullifier, candidateId);
     }
 
-    function getFinalResult() external view returns (uint256 winnerId) {
-        uint256 maxVotes = 0;
-        uint256 winningCandidate = 0;
+    function getVotes(uint256 roundId, uint256 candidateId) external view returns (uint256) {
+        require(candidateId >= 1 && candidateId <= candidateCount, "Invalid candidate");
+        return votes[roundId][candidateId];
+    }
 
+    function getFinalResult(uint256 roundId) external view returns (uint256 winnerId) {
+        uint256 maxVotes;
+        uint256 winner;
         for (uint256 i = 1; i <= candidateCount; i++) {
-            if (votes[i] > maxVotes) {
-                maxVotes = votes[i];
-                winningCandidate = i;
+            if (votes[roundId][i] > maxVotes) {
+                maxVotes = votes[roundId][i];
+                winner = i;
             }
         }
-
-        return winningCandidate;
+        return winner;
     }
 
-    function totalVotes() external view returns (uint256 total) {
+    function totalVotes(uint256 roundId) external view returns (uint256 total) {
         for (uint256 i = 1; i <= candidateCount; i++) {
-            total += votes[i];
+            total += votes[roundId][i];
         }
-    }
-
-    function getVotes(uint256 candidateId) external view returns (uint256) {
-        require(candidateId >= 1 && candidateId <= candidateCount, "Invalid candidate");
-        return votes[candidateId];
     }
 }
