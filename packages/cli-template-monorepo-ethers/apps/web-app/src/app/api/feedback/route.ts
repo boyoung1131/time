@@ -1,5 +1,5 @@
 import { Contract, InfuraProvider, JsonRpcProvider, Wallet } from "ethers"
-import { NextRequest} from "next/server"
+import { NextRequest } from "next/server"
 import Feedback from "../../../../contract-artifacts/Feedback.json"
 
 export async function POST(req: NextRequest) {
@@ -33,20 +33,40 @@ export async function POST(req: NextRequest) {
         )
         await tx.wait()
 
-        const votesFor1 = Number(await contract.getVotes(round, 1))
-        const votesFor2 = Number(await contract.getVotes(round, 2))
-        const votesFor3 = Number(await contract.getVotes(round, 3))
-        const totalVotes = votesFor1 + votesFor2 + votesFor3
-
-        if (totalVotes >= 3) {
-            const result = `Final Result:
-Candidate 1: ${votesFor1}
-Candidate 2: ${votesFor2}
-Candidate 3: ${votesFor3}`
-            return new Response(result, { status: 200 })
-        } else {
-            return new Response(`Voted for #${candidateId} in round ${round}`, { status: 200 })
+        // 當前 round 的票數
+        const votes = {
+            1: Number(await contract.getVotes(round, 1)),
+            2: Number(await contract.getVotes(round, 2)),
+            3: Number(await contract.getVotes(round, 3))
         }
+        const totalVotes = votes[1] + votes[2] + votes[3]
+
+        // ✅ 第一輪達票數門檻，公布 Round 1 結果
+        if (round === 1 && totalVotes >= 3) {
+            const result = `Round 1 Result:
+Candidate 1: ${votes[1]}
+Candidate 2: ${votes[2]}
+Candidate 3: ${votes[3]}`
+            return new Response(result, { status: 200 })
+        }
+
+        // ✅ 第二輪達票數門檻，公布 Final Result（兩輪累加）
+        if (round === 2 && totalVotes >= 3) {
+            const prev = {
+                1: Number(await contract.getVotes(1, 1)),
+                2: Number(await contract.getVotes(1, 2)),
+                3: Number(await contract.getVotes(1, 3))
+            }
+
+            const result = `Final Result:
+Candidate 1: ${votes[1] + prev[1]}
+Candidate 2: ${votes[2] + prev[2]}
+Candidate 3: ${votes[3] + prev[3]}`
+
+            return new Response(result, { status: 200 })
+        }
+
+        return new Response(`Voted for #${candidateId} in round ${round}`, { status: 200 })
     } catch (error: any) {
         console.error("Voting error:", error)
         return new Response(`Server error: ${error}`, { status: 500 })

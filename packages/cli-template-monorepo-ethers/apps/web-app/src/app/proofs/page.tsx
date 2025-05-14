@@ -126,41 +126,54 @@ export default function ProofsPage() {
       {feedback.length > 0 && (
         <div className="fedback-wraper"
           style={{
-            maxHeight:"500px",
+            maxHeight:"600px",
             overflowY:"auto",
             marginBottom: "1rem"
           }}
         >
           {feedback.map((entry, i) => {
             let display = entry.text
-              if (entry.round === 1 && entry.text.startsWith("Final Result")) {
-                const parts = entry.text
-                  .replace("Final Result:", "")
-                  .trim()
-                  .split("Candidate ")
-                  .filter(p => p)
-        
-                let maxCount = -1
-                let winnerId = ""
-                parts.forEach(p => {
-                  const [id, cnt] = p.split(":").map(s => s.trim())
-                  const num = Number(cnt)
-                  if (num > maxCount) {
-                    maxCount = num
-                    winnerId = id
-                  }
-                })
-                display = `Winner: Candidate ${winnerId}`
-              }
 
-              return (
-                <div key={i}>
-                  <p className="box box-text">
-                    Round {entry.round}: {display}
-                  </p>
-                </div>
-              )
-            })}
+            // ✅ 顯示 Round 1 Winner
+            if (
+              entry.round === 1 &&
+              entry.text.startsWith("Round 1 Result")
+            ) {
+              const parts = entry.text
+                .replace("Round 1 Result:", "")
+                .trim()
+                .split("Candidate ")
+                .filter(p => p)
+
+              let maxCount = -1
+              let winnerId = ""
+              parts.forEach(p => {
+                const [id, cnt] = p.split(":").map(s => s.trim())
+                const num = Number(cnt)
+                if (num > maxCount) {
+                  maxCount = num
+                  winnerId = id
+                }
+              })
+              display = `Winner: Candidate ${winnerId}`
+            }
+
+            // ✅ 顯示 Final Result (累加)
+            else if (
+              entry.round === 2 &&
+              entry.text.startsWith("Final Result")
+            ) {
+              // 不改變文字，直接顯示 full result
+              display = entry.text
+            }
+            return (
+              <div key={i}>
+                <p className="box box-text">
+                  {entry.text.startsWith("Final Result") ? display : `Round ${entry.round}: ${display}`}
+                </p>
+              </div>
+            )
+          })}
         </div>
       )}
 
