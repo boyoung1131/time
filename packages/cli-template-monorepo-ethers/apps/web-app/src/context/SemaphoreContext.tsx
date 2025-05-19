@@ -12,7 +12,6 @@ import { JsonRpcProvider, Contract } from "ethers"
 import { SemaphoreEthers } from "@semaphore-protocol/data"
 import FeedbackABI from "../../contract-artifacts/Feedback.json"
 
-// 每一筆 feedback 都包含輪次和文字
 export type FeedbackEntry = {
   round: number
   text: string
@@ -33,7 +32,6 @@ export type SemaphoreContextType = {
 
 const SemaphoreContext = createContext<SemaphoreContextType | null>(null)
 
-// 這裡用本地 RPC，也可以換成 NEXT_PUBLIC_RPC_URL
 const provider = new JsonRpcProvider("http://127.0.0.1:8545")
 const feedbackContract = new Contract(
   process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS!,
@@ -98,7 +96,6 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({
     }
   }, [])
 
-  // 讀取最終勝者
   const getWinner = useCallback(async () => {
     try {
       const w = await feedbackContract.getFinalResult()

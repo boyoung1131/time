@@ -24,7 +24,6 @@ describe("Feedback (Multi-Round)", () => {
     it("Should allow one vote in each round", async () => {
       const { semaphoreContract, feedbackContract } = await loadFixture(deployFeedbackFixture)
 
-      // 準備一個選民
       const user = new Identity()
       const group = new Group()
 
@@ -39,8 +38,8 @@ describe("Feedback (Multi-Round)", () => {
       const proof1 = await generateProof(
         user,
         group,
-        candidate.toString(),  // signal = 候選人編號
-        round1.toString()      // scope = 輪次
+        candidate.toString(),  
+        round1.toString()    
       )
 
       // 傳入 depth, root, nullifier, candidate, round, points

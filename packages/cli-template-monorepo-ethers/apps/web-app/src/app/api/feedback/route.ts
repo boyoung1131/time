@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
         }
         const totalVotes = votes[1] + votes[2] + votes[3]
 
-        // ✅ 第一輪達票數門檻，公布 Round 1 結果
+        // 第一輪公布 Round 1 結果
         if (round === 1 && totalVotes >= 3) {
             const result = `Round 1 Result:
 Candidate 1: ${votes[1]}
@@ -50,7 +50,7 @@ Candidate 3: ${votes[3]}`
             return new Response(result, { status: 200 })
         }
 
-        // ✅ 第二輪達票數門檻，公布 Final Result（兩輪累加）
+        // 第二輪公布 Final Result（兩輪累加）
         if (round === 2 && totalVotes >= 3) {
             const prev = {
                 1: Number(await contract.getVotes(1, 1)),

@@ -15,7 +15,43 @@ export default function ProofsPage() {
   const [loading, setLoading] = useState(false)
   const { _identity } = useSemaphoreIdentity()
   const [candidateId, setCandidateId] = useState(1)
-  const [round, setRound] = useState<"1" | "2">("1")
+  const [round, setRound] = useState<"1" | "2" | "end">("1")
+  const [timeLeft, setTimeLeft] = useState<string>("")
+
+  useEffect(() => {
+    const startTimestamp = new Date("2025-05-19T15:35:00+08:00").getTime()
+    const roundDurationMs = 5 * 60 * 1000
+
+    const updateRound = () => {
+      const now = Date.now()
+      const elapsed = now - startTimestamp
+
+      if (elapsed < 0) {
+        setRound("1")
+        setTimeLeft("Not started")
+        return
+      }
+
+      const roundIndex = Math.floor(elapsed / roundDurationMs)
+      const currentRound = roundIndex + 1
+
+      if (currentRound === 1 || currentRound === 2) {
+        setRound(currentRound.toString() as "1" | "2")
+        const nextRoundStart = startTimestamp + (roundIndex + 1) * roundDurationMs
+        const remaining = nextRoundStart - now
+        const minutes = Math.floor(remaining / 60000)
+        const seconds = Math.floor((remaining % 60000) / 1000)
+        setTimeLeft(`${minutes}:${seconds.toString().padStart(2, "0")}`)
+      } else {
+        setRound("end")
+        setTimeLeft("Voting ended")
+      }
+    }
+
+    updateRound()
+    const timer = setInterval(updateRound, 10000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (_feedback.length > 0) {
@@ -100,13 +136,15 @@ export default function ProofsPage() {
         </button>
       </div>
 
-      {/* 輪次選擇 */}
+      {/* 顯示當前輪次與倒數時間 */}
       <div style={{ marginBottom: "1rem" }}>
-        <label>Select Round: </label>
-        <select value={round} onChange={e => setRound(e.target.value as "1" | "2")}>
+        <label>Current Round: </label>
+        <select value={round} disabled>
           <option value="1">Round 1</option>
           <option value="2">Round 2</option>
+          <option value="end">Voting Ended</option>
         </select>
+        <span style={{ marginLeft: "1rem", fontStyle: "italic" }}>⏳ {timeLeft}</span>
       </div>
 
       {/* 候選人選擇 */}
@@ -126,7 +164,7 @@ export default function ProofsPage() {
       {feedback.length > 0 && (
         <div className="fedback-wraper"
           style={{
-            maxHeight:"600px",
+            maxHeight:"1000px",
             overflowY:"auto",
             marginBottom: "1rem"
           }}
@@ -134,7 +172,7 @@ export default function ProofsPage() {
           {feedback.map((entry, i) => {
             let display = entry.text
 
-            // ✅ 顯示 Round 1 Winner
+            // Round 1 Winner
             if (
               entry.round === 1 &&
               entry.text.startsWith("Round 1 Result")
@@ -157,13 +195,10 @@ export default function ProofsPage() {
               })
               display = `Winner: Candidate ${winnerId}`
             }
-
-            // ✅ 顯示 Final Result (累加)
             else if (
               entry.round === 2 &&
               entry.text.startsWith("Final Result")
             ) {
-              // 不改變文字，直接顯示 full result
               display = entry.text
             }
             return (
@@ -179,8 +214,8 @@ export default function ProofsPage() {
 
       {/* 送出按鈕 */}
       <div className="send-feedback-button">
-        <button className="button" onClick={sendFeedback} disabled={loading}>
-          <span>{loading ? "Submitting..." : "Send Vote"}</span>
+        <button className="button" onClick={sendFeedback} disabled={loading || round === "end"}>
+          <span>{loading ? "Submitting..." : round === "end" ? "Voting Closed" : "Send Vote"}</span>
           {loading && <div className="loader" />}
         </button>
       </div>
