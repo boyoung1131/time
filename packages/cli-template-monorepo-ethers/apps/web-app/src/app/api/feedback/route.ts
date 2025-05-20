@@ -32,40 +32,6 @@ export async function POST(req: NextRequest) {
             points
         )
         await tx.wait()
-
-        // 當前 round 的票數
-        const votes = {
-            1: Number(await contract.getVotes(round, 1)),
-            2: Number(await contract.getVotes(round, 2)),
-            3: Number(await contract.getVotes(round, 3))
-        }
-        const totalVotes = votes[1] + votes[2] + votes[3]
-
-        // 第一輪公布 Round 1 結果
-        if (round === 1 && totalVotes >= 3) {
-            const result = `Round 1 Result:
-Candidate 1: ${votes[1]}
-Candidate 2: ${votes[2]}
-Candidate 3: ${votes[3]}`
-            return new Response(result, { status: 200 })
-        }
-
-        // 第二輪公布 Final Result（兩輪累加）
-        if (round === 2 && totalVotes >= 3) {
-            const prev = {
-                1: Number(await contract.getVotes(1, 1)),
-                2: Number(await contract.getVotes(1, 2)),
-                3: Number(await contract.getVotes(1, 3))
-            }
-
-            const result = `Final Result:
-Candidate 1: ${votes[1] + prev[1]}
-Candidate 2: ${votes[2] + prev[2]}
-Candidate 3: ${votes[3] + prev[3]}`
-
-            return new Response(result, { status: 200 })
-        }
-
         return new Response(`Voted for #${candidateId} in round ${round}`, { status: 200 })
     } catch (error: any) {
         console.error("Voting error:", error)
