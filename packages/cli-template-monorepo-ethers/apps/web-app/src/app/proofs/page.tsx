@@ -32,7 +32,7 @@ export default function ProofsPage() {
   const [resultLoading, setResultLoading] = useState(false)
 
   useEffect(() => {
-    const startTimestamp = new Date("2025-05-21T16:25:00+08:00").getTime()
+    const startTimestamp = new Date("2025-05-21T17:40:00+08:00").getTime()
     const updateRound = () => {
       const now = Date.now()
       const elapsed = now - startTimestamp
@@ -253,29 +253,50 @@ export default function ProofsPage() {
           ))}
         </div>
       </div>
+      
+      {(round === "1" || round === "2") && (
+        <button
+          className="button"
+          disabled={selectedCandidates.length !== 2 || loading}
+          onClick={sendFeedbackWithCandidates}
+        >
+          {loading
+            ? "Submitting..."
+            : `Submit Votes (${selectedCandidates.join(" & ")})`}
+        </button>
+      )}
 
-      <button
-        className="button"
-        disabled={selectedCandidates.length !== 2 || loading}
-        onClick={sendFeedbackWithCandidates}
-      >
-        {loading
-          ? "Submitting..."
-          : `Submit Votes (${selectedCandidates.join(" & ")})`}
-      </button>
-
-      {feedback.length > 0 && (
+      {round === "1" && feedback.some(e => e.round === 1) && (
         <div
           className="fedback-wraper"
           style={{ maxHeight: 400, overflowY: "auto", marginTop: "1rem" }}
         >
-          {feedback.map((entry, i) => (
-            <div key={i}>
-              <p className="box box-text">
-                Round {entry.round}: {entry.text}
-              </p>
-            </div>
-          ))}
+          {feedback
+            .filter(entry => entry.round === 1)
+            .map((entry, i) => (
+              <div key={i}>
+                <p className="box box-text">
+                  Round {entry.round}: {entry.text}
+                </p>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {round === "2" && feedback.some(e => e.round === 2) && (
+        <div
+          className="fedback-wraper"
+          style={{ maxHeight: 400, overflowY: "auto", marginTop: "1rem" }}
+        >
+          {feedback
+            .filter(entry => entry.round === 2)
+            .map((entry, i) => (
+              <div key={i}>
+                <p className="box box-text">
+                  Round {entry.round}: {entry.text}
+                </p>
+              </div>
+            ))}
         </div>
       )}
 
