@@ -72,11 +72,16 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({
         process.env.NEXT_PUBLIC_GROUP_ID!
       )
       setFeedback(
-        proofs.map((p: any) => ({
-          round: Number(p.scope.toString()),
-          text: `Voted for #${p.message.toString()}`
-        }))
-      )
+        proofs.map((p: any) => {
+          const enc = parseInt(p.message.toString(),10)
+          const c1  = Math.floor(enc / 100)
+          const c2  = enc % 100
+          return {
+            round: Number(p.scope.toString()),
+            text: `Voted for #${c1} & #${c2}`
+        }
+      })
+    )
     } catch (e) {
       console.error("refreshFeedback error", e)
     }

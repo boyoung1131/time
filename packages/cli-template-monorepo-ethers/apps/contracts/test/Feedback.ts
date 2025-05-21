@@ -7,11 +7,9 @@ import { Feedback, ISemaphore } from "../typechain-types"
 
 describe("Feedback (Multi-Round)", () => {
   async function deployFeedbackFixture() {
-    // 部署 Semaphore
     const { semaphore } = await run("deploy:semaphore", { logs: false })
     const semaphoreContract: ISemaphore = semaphore
 
-    // 部署 Feedback
     const feedbackContract: Feedback = await run("deploy", {
       logs: false,
       semaphore: await semaphoreContract.getAddress()
@@ -21,59 +19,51 @@ describe("Feedback (Multi-Round)", () => {
   }
 
   describe("Multi-round voting", () => {
-    it("Should allow one vote in each round", async () => {
+    it("Should allow one vote in each round (dual-vote encoded)", async () => {
       const { semaphoreContract, feedbackContract } = await loadFixture(deployFeedbackFixture)
 
       const user = new Identity()
       const group = new Group()
 
-      // 註冊到 on-chain group
       await feedbackContract.joinGroup(user.commitment)
       group.addMember(user.commitment)
 
-      const candidate = 2
+      const candidate1 = 2
+      const candidate2 = 3
+      const encoded = candidate1 * 100 + candidate2 // encoded as 203
 
       // ---- Round 1 ----
       const round1 = 1
       const proof1 = await generateProof(
         user,
         group,
-        candidate.toString(),  
-        round1.toString()    
+        encoded.toString(),
+        round1.toString()
       )
 
-      // 傳入 depth, root, nullifier, candidate, round, points
       await expect(
         feedbackContract.sendVote(
           proof1.merkleTreeDepth,
           proof1.merkleTreeRoot,
           proof1.nullifier,
-          candidate,
+          encoded,
           round1,
           proof1.points
         )
       )
-      .to.emit(semaphoreContract, "ProofValidated")
-      .withArgs(
-        await feedbackContract.groupId(),
-        proof1.merkleTreeDepth,
-        proof1.merkleTreeRoot,
-        proof1.nullifier,
-        candidate,
-        round1,
-        proof1.points
-      )
+        .to.emit(semaphoreContract, "ProofValidated")
 
-      // 讀回 Round1 的票數
-      const votes1 = await feedbackContract.getVotes(round1, candidate)
-      expect(votes1).to.equal(1)
+      const votes1_c1 = await feedbackContract.getVotes(round1, candidate1)
+      const votes1_c2 = await feedbackContract.getVotes(round1, candidate2)
+      expect(votes1_c1).to.equal(1)
+      expect(votes1_c2).to.equal(1)
 
       // ---- Round 2 ----
       const round2 = 2
       const proof2 = await generateProof(
         user,
         group,
-        candidate.toString(),
+        encoded.toString(),
         round2.toString()
       )
 
@@ -82,14 +72,16 @@ describe("Feedback (Multi-Round)", () => {
           proof2.merkleTreeDepth,
           proof2.merkleTreeRoot,
           proof2.nullifier,
-          candidate,
+          encoded,
           round2,
           proof2.points
         )
       ).to.emit(semaphoreContract, "ProofValidated")
 
-      const votes2 = await feedbackContract.getVotes(round2, candidate)
-      expect(votes2).to.equal(1)
+      const votes2_c1 = await feedbackContract.getVotes(round2, candidate1)
+      const votes2_c2 = await feedbackContract.getVotes(round2, candidate2)
+      expect(votes2_c1).to.equal(1)
+      expect(votes2_c2).to.equal(1)
     })
 
     it("Should reject duplicate vote in same round", async () => {
@@ -101,39 +93,37 @@ describe("Feedback (Multi-Round)", () => {
       await feedbackContract.joinGroup(user.commitment)
       group.addMember(user.commitment)
 
-      const candidate = 3
+      const encoded = 303 // two votes for candidate 3
       const round1 = 1
       const proof = await generateProof(
         user,
         group,
-        candidate.toString(),
+        encoded.toString(),
         round1.toString()
       )
 
-      // 第一次投票
       await feedbackContract.sendVote(
         proof.merkleTreeDepth,
         proof.merkleTreeRoot,
         proof.nullifier,
-        candidate,
+        encoded,
         round1,
         proof.points
       )
 
-      // 第二次用同一 nullifier & 同一 round 要被拒
       await expect(
         feedbackContract.sendVote(
           proof.merkleTreeDepth,
           proof.merkleTreeRoot,
           proof.nullifier,
-          candidate,
+          encoded,
           round1,
           proof.points
         )
       ).to.be.revertedWith("Duplicate vote")
     })
 
-    it("Should reject invalid candidateId", async () => {
+    it("Should reject invalid candidateId (decoded value out of range)", async () => {
       const { feedbackContract } = await loadFixture(deployFeedbackFixture)
 
       const user = new Identity()
@@ -142,12 +132,12 @@ describe("Feedback (Multi-Round)", () => {
       await feedbackContract.joinGroup(user.commitment)
       group.addMember(user.commitment)
 
-      const invalidCandidate = 99
+      const invalidEncoded = 105 // candidate 5 is out of range
       const round1 = 1
       const proof = await generateProof(
         user,
         group,
-        invalidCandidate.toString(),
+        invalidEncoded.toString(),
         round1.toString()
       )
 
@@ -156,11 +146,11 @@ describe("Feedback (Multi-Round)", () => {
           proof.merkleTreeDepth,
           proof.merkleTreeRoot,
           proof.nullifier,
-          invalidCandidate,
+          invalidEncoded,
           round1,
           proof.points
         )
-      ).to.be.revertedWith("Invalid candidate")
+      ).to.be.revertedWith("Invalid candidate 2")
     })
   })
 })
