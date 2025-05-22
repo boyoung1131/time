@@ -22,6 +22,8 @@ export type SemaphoreContextType = {
   _feedback: FeedbackEntry[]
   votes: number[]
   winner: number | null
+  currentRound: number
+  setCurrentRound: (round: number) => void
   refreshUsers: () => Promise<void>
   refreshFeedback: () => Promise<void>
   refreshVotes: () => Promise<void>
@@ -46,8 +48,8 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({
   const [_feedback, setFeedback] = useState<FeedbackEntry[]>([])
   const [votes, setVotes] = useState<number[]>([])
   const [winner, setWinner] = useState<number | null>(null)
+  const [currentRound, setCurrentRound] = useState<number>(1)
 
-  // 讀取群組成員並更新
   const refreshUsers = useCallback(async () => {
     try {
       const semaphore = new SemaphoreEthers("http://127.0.0.1:8545", {
@@ -62,7 +64,6 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({
     }
   }, [])
 
-  // 讀取已驗證的 proofs，並將 proof.scope 當作輪次
   const refreshFeedback = useCallback(async () => {
     try {
       const semaphore = new SemaphoreEthers("http://127.0.0.1:8545", {
@@ -73,42 +74,41 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({
       )
       setFeedback(
         proofs.map((p: any) => {
-          const enc = parseInt(p.message.toString(),10)
-          const c1  = Math.floor(enc / 100)
-          const c2  = enc % 100
+          const enc = parseInt(p.message.toString(), 10)
+          const c1 = Math.floor(enc / 100)
+          const c2 = enc % 100
           return {
             round: Number(p.scope.toString()),
             text: `Voted for #${c1} & #${c2}`
-        }
-      })
-    )
+          }
+        })
+      )
     } catch (e) {
       console.error("refreshFeedback error", e)
     }
   }, [])
 
-  // 讀取鏈上累計票數
   const refreshVotes = useCallback(async () => {
     try {
       const result: number[] = []
       for (let i = 1; i <= 3; i++) {
-        const count = await feedbackContract.getVotes(i)
+        const count = await feedbackContract.getVotes(currentRound, i)
         result.push(Number(count.toString()))
       }
       setVotes(result)
     } catch (e) {
       console.error("refreshVotes error", e)
     }
-  }, [])
+  }, [currentRound])
 
   const getWinner = useCallback(async () => {
     try {
-      const w = await feedbackContract.getFinalResult()
+      const w = await feedbackContract.getFinalResult(currentRound)
       setWinner(Number(w.toString()))
     } catch (e) {
       console.error("getWinner error", e)
     }
-  }, [])
+  }, [currentRound])
 
   const addUser = useCallback((user: string) => {
     setUsers((prev) => [...prev, user])
@@ -132,6 +132,8 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({
         _feedback,
         votes,
         winner,
+        currentRound,
+        setCurrentRound,
         refreshUsers,
         refreshFeedback,
         refreshVotes,
