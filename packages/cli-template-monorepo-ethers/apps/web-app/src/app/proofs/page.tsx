@@ -22,7 +22,9 @@ export default function ProofsPage() {
         currentRound,
         setCurrentRound,
         refreshVotes,
-        getWinner
+        setVotes,
+        getWinner,
+        fetchTotalVotes
     } = useSemaphoreContext()
 
     const { _identity } = useSemaphoreIdentity()
@@ -36,10 +38,10 @@ export default function ProofsPage() {
 
     const feedback = useMemo(() => [..._feedback].reverse(), [_feedback])
     const getVoteHash = (c1: number, c2: number, salt: string) => {
-    const sorted = [c1, c2].sort((a, b) => a - b)
-    const coder = AbiCoder.defaultAbiCoder()
-    const encoded = coder.encode(["uint256", "uint256", "uint256"], [sorted[0], sorted[1], salt])
-    return keccak256(encoded)
+      const sorted = [c1, c2].sort((a, b) => a - b)
+      const coder = AbiCoder.defaultAbiCoder()
+      const encoded = coder.encode(["uint256", "uint256", "uint256"], [sorted[0], sorted[1], salt])
+      return keccak256(encoded)
 }
 
   useEffect(() => {
@@ -47,8 +49,29 @@ export default function ProofsPage() {
     setSalt("")
   }, [phase])
 
+  const fetchVotes = async (roundId: number) => {
+    try {
+        const res = await fetch(`/api/feedback?round=${roundId}`)
+        const data = await res.json()
+        setVotes(data.totalVotes.map(Number))
+      } catch (e) {
+          console.error("fetchVotes error", e)
+      }
+  }
   useEffect(() => {
-    const startTimestamp = new Date("2025-05-22T17:53:00+08:00").getTime()
+    if (phase === "r1-result") {
+        fetchVotes(1)
+        getWinner(1)
+    }
+
+    if (phase === "r2-result") {
+        fetchVotes(2)
+        getWinner(2)
+      }
+  }, [phase, getWinner])
+
+  useEffect(() => {
+    const startTimestamp = new Date("2025-05-23T17:40:00+08:00").getTime()
     const updatePhase = () => {
       const now = Date.now()
       const elapsed = now - startTimestamp
@@ -95,13 +118,9 @@ export default function ProofsPage() {
 
   useEffect(() => {
     if (phase.includes("reveal")) {
-        const saved = localStorage.getItem(`salt-round-${currentRound}`)
-        if (saved) {
-        setSalt(saved)
-        }
-    }
+        setSalt("")
+      }
     }, [phase, currentRound])
-
 
   const toggleCandidate = useCallback((id: number) => {
     setSelectedCandidates(prev =>
@@ -134,7 +153,6 @@ export default function ProofsPage() {
         setVotedRounds(prev => [...prev, currentRound])
         setSelectedCandidates([])
         setLog("Vote committed!")
-
         await refreshVotes()
       }else {
         const msg = await res.text()
@@ -170,7 +188,6 @@ export default function ProofsPage() {
         setRevealedRounds(prev => [...prev, currentRound])
         addFeedback({ round: currentRound, text: `Voted for #${sorted[0]} & #${sorted[1]}` })
         setLog("Vote revealed!")
-
         await refreshVotes()
       }else {
         const msg = await res.text()
@@ -184,38 +201,34 @@ export default function ProofsPage() {
   }
 
   const renderResults = () => {
-    if (phase === "r1-result" && currentRound === 1) {
-      const maxVotes = Math.max(...votes)
-      const winners = votes.map((v, i) => ({ v, i: i + 1 })).filter(x => x.v === maxVotes)
-      return (
-        <>
-          <p style={{ fontWeight: "bold", fontSize: "1.2rem" }}>
-            🏆 R1 Winner{winners.length > 1 ? "s" : ""}:{" "}
-            {winners.map(w => `Candidate ${w.i}`).join(" & ")}
-          </p>
+    const maxVotes = Math.max(...votes)
+    const winners = votes.map((v, i) => ({ v, i: i + 1 })).filter(x => x.v === maxVotes)
 
-        </>
+    if (phase === "r1-result" && currentRound === 1) {
+      return (
+        <div>
+          <p style={{ fontWeight: "bold", fontSize: "1.2rem" }}>
+            🏆 R1 Winner: Candidate {winners[0].i}
+          </p>
+        </div>
       )
     }
 
     if (phase === "r2-result" && currentRound === 2) {
-      const maxVotes = Math.max(...votes)
-      const winners = votes.map((v, i) => ({ v, i: i + 1 })).filter(x => x.v === maxVotes)
       return (
-        <>
+        <div>
           <p style={{ fontWeight: "bold", fontSize: "1.2rem" }}>
             🏆 Final Winner{winners.length > 1 ? "s" : ""}:{" "}
             {winners.map(w => `Candidate ${w.i}`).join(" & ")}
           </p>
           <ul>
             {votes.map((v, i) => (
-              <li key={i}>Candidate {i + 1}: {v}</li>
+              <li key={i}>Candidate {i + 1}: {v} vote{v !== 1 ? "s" : ""}</li>
             ))}
           </ul>
-        </>
+        </div>
       )
     }
-
     return null
   }
 
@@ -264,6 +277,7 @@ export default function ProofsPage() {
                 />
                 <button
                     className="button"
+                    disabled={loading}
                     onClick={() => {
                     const newSalt = Math.floor(100000 + Math.random() * 900000).toString()
                     localStorage.setItem(`salt-round-${currentRound}`, newSalt)
@@ -293,7 +307,7 @@ export default function ProofsPage() {
                   value={salt}
                   onChange={(e) => setSalt(e.target.value)}
                   className="input"
-                  style={{ flex: 1 }}
+                  style={{ width: "200px" , height: "40px" }}
                 />
                 <button
                   className="button"
@@ -307,29 +321,6 @@ export default function ProofsPage() {
           )}
         </>
       )}
-
-      {!phase.includes("commit") || phase.includes("reveal") && feedback.some(f => f.round === currentRound) && (
-        <div
-          className="fedback-wraper"
-          style={{
-            marginTop: "1rem",
-            maxHeight: "200px",
-            overflowY: "auto",
-            paddingRight: "0.5rem",
-            border: "1px solid #444",
-            borderRadius: "6px"
-          }}
-        >
-          {feedback
-            .filter(f => f.round === currentRound)
-            .map((entry, i) => (
-              <p key={i} className="box box-text" style={{ margin: "0.5rem 0" }}>
-                Round {entry.round}: {entry.text}
-              </p>
-            ))}
-        </div>
-      )}
-
       {(phase === "r1-result" || phase === "r2-result") && (
         <div style={{ marginTop: "2rem" }}>
           {renderResults()}

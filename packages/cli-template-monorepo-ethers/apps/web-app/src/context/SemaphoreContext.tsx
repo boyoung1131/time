@@ -8,7 +8,7 @@ import React, {
   useState,
   ReactNode
 } from "react"
-import { JsonRpcProvider, Contract } from "ethers"
+import { JsonRpcProvider, Contract, InfuraProvider, Wallet } from "ethers"
 import { SemaphoreEthers } from "@semaphore-protocol/data"
 import FeedbackABI from "../../contract-artifacts/Feedback.json"
 
@@ -27,9 +27,14 @@ export type SemaphoreContextType = {
   refreshUsers: () => Promise<void>
   refreshFeedback: () => Promise<void>
   refreshVotes: () => Promise<void>
-  getWinner: () => Promise<void>
+  /**
+   * Fetch and set winner and votes for given round
+   */
+  getWinner: (round: number) => Promise<void>
+  fetchTotalVotes: () => Promise<void>
   addUser: (user: string) => void
   addFeedback: (entry: FeedbackEntry) => void
+  setVotes: (votes: number[]) => void
 }
 
 const SemaphoreContext = createContext<SemaphoreContextType | null>(null)
@@ -41,9 +46,7 @@ const feedbackContract = new Contract(
   provider
 )
 
-export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({
-  children
-}) => {
+export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [_users, setUsers] = useState<string[]>([])
   const [_feedback, setFeedback] = useState<FeedbackEntry[]>([])
   const [votes, setVotes] = useState<number[]>([])
@@ -101,14 +104,34 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({
     }
   }, [currentRound])
 
-  const getWinner = useCallback(async () => {
+  /**
+   * Fetch winner and votes for the specified round
+   */
+  const getWinner = useCallback(async (round: number) => {
     try {
-      const w = await feedbackContract.getFinalResult(currentRound)
-      setWinner(Number(w.toString()))
+      if (round === 1) {
+        const w = await feedbackContract.getFinalResult(1)
+        setWinner(Number(w.toString()))
+      } else {
+        const [w, totals] = await feedbackContract.getFinalResultTotal(round)
+        // totals is BigInt[], first element dummy
+        setVotes(totals.slice(1).map((v: any) => Number(v.toString())))
+        setWinner(Number(w.toString()))
+      }
     } catch (e) {
       console.error("getWinner error", e)
     }
-  }, [currentRound])
+  }, [])
+
+  const fetchTotalVotes = useCallback(async () => {
+    try {
+      const res = await fetch("/api/feedback")
+      const data = await res.json()
+      setVotes(data.totalVotes.map(Number))
+    } catch (e) {
+      console.error("fetchTotalVotes error", e)
+    }
+  }, [])
 
   const addUser = useCallback((user: string) => {
     setUsers((prev) => [...prev, user])
@@ -122,8 +145,8 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({
     refreshUsers()
     refreshFeedback()
     refreshVotes()
-    getWinner()
-  }, [refreshUsers, refreshFeedback, refreshVotes, getWinner])
+    getWinner(currentRound)
+  }, [refreshUsers, refreshFeedback, refreshVotes, getWinner, currentRound])
 
   return (
     <SemaphoreContext.Provider
@@ -138,8 +161,10 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({
         refreshFeedback,
         refreshVotes,
         getWinner,
+        fetchTotalVotes,
         addUser,
-        addFeedback
+        addFeedback,
+        setVotes
       }}
     >
       {children}

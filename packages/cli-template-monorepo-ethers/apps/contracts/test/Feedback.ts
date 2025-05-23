@@ -122,5 +122,32 @@ describe("Feedback (Multi-Round + Commit/Reveal)", () => {
         feedbackContract.revealVote(round, proof.nullifier, 1, 99, salt)
       ).to.be.revertedWith("Invalid candidate 2")
     })
+
+    it("Should correctly determine winner by round and total", async () => {
+      const { feedbackContract } = await loadFixture(deployFeedbackFixture)
+      const user = new Identity()
+      const group = new Group()
+      await feedbackContract.joinGroup(user.commitment)
+      group.addMember(user.commitment)
+
+      const salt1 = 111
+      const voteHash1 = generateVoteHash(2, 3, salt1)
+      const proof1 = await generateProof(user, group, voteHash1, "1")
+      await feedbackContract.commitVote(proof1.merkleTreeDepth, proof1.merkleTreeRoot, proof1.nullifier, voteHash1, 1, proof1.points)
+      await feedbackContract.revealVote(1, proof1.nullifier, 2, 3, salt1)
+
+      const salt2 = 222
+      const voteHash2 = generateVoteHash(2, 2, salt2)
+      const proof2 = await generateProof(user, group, voteHash2, "2")
+      await feedbackContract.commitVote(proof2.merkleTreeDepth, proof2.merkleTreeRoot, proof2.nullifier, voteHash2, 2, proof2.points)
+      await feedbackContract.revealVote(2, proof2.nullifier, 2, 2, salt2)
+
+      const winnerR1 = await feedbackContract.getFinalResult(1)
+      expect([2, 3]).to.include(Number(winnerR1))
+
+      const [winnerTotal, voteTotals] = await feedbackContract.getFinalResultTotal(2)
+      expect(winnerTotal).to.equal(2)
+      expect(voteTotals[2]).to.equal(3)
+    })
   })
 })

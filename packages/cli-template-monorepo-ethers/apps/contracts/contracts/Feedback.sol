@@ -27,7 +27,7 @@ contract Feedback {
 
     constructor(address semaphoreAddress) {
         semaphore = ISemaphore(semaphoreAddress);
-        candidateCount = 3; // 預設候選人數為 3
+        candidateCount = 3;
         groupId = semaphore.createGroup();
     }
 
@@ -105,6 +105,21 @@ contract Feedback {
     function totalVotes(uint256 roundId) external view returns (uint256 total) {
         for (uint256 i = 1; i <= candidateCount; i++) {
             total += votes[roundId][i];
+        }
+    }
+
+    function getFinalResultTotal(uint256 upToRound) external view returns (uint256 winnerId, uint256[] memory totalVotesPerCandidate) {
+        totalVotesPerCandidate = new uint256[](candidateCount + 1); // index from 1
+        uint256 maxVotes = 0;
+
+        for (uint256 round = 1; round <= upToRound; round++) {
+            for (uint256 candidate = 1; candidate <= candidateCount; candidate++) {
+                totalVotesPerCandidate[candidate] += votes[round][candidate];
+                if (totalVotesPerCandidate[candidate] > maxVotes) {
+                    maxVotes = totalVotesPerCandidate[candidate];
+                    winnerId = candidate;
+                }
+            }
         }
     }
 }
