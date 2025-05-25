@@ -71,7 +71,7 @@ export default function ProofsPage() {
   }, [phase, getWinner])
 
   useEffect(() => {
-    const startTimestamp = new Date("2025-05-23T17:40:00+08:00").getTime()
+    const startTimestamp = new Date("2025-05-25T16:13:00+08:00").getTime()
     const updatePhase = () => {
       const now = Date.now()
       const elapsed = now - startTimestamp
