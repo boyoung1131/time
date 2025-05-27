@@ -8,7 +8,7 @@ import React, {
   useState,
   ReactNode
 } from "react"
-import { JsonRpcProvider, Contract, InfuraProvider, Wallet } from "ethers"
+import { JsonRpcProvider, Contract } from "ethers"
 import { SemaphoreEthers } from "@semaphore-protocol/data"
 import FeedbackABI from "../../contract-artifacts/Feedback.json"
 
@@ -18,20 +18,26 @@ export type FeedbackEntry = {
 }
 
 export type SemaphoreContextType = {
+  // on-chain users
   _users: string[]
+  // raw feedback entries
   _feedback: FeedbackEntry[]
+  // dynamic vote tallies for current round
   votes: number[]
+  // winner of the current round or final
   winner: number | null
+  // dynamic parameters
+  candidateCount: number
+  totalRounds: number
+  // current active round
   currentRound: number
   setCurrentRound: (round: number) => void
+  // fetch helpers
   refreshUsers: () => Promise<void>
   refreshFeedback: () => Promise<void>
   refreshVotes: () => Promise<void>
-  /**
-   * Fetch and set winner and votes for given round
-   */
   getWinner: (round: number) => Promise<void>
-  fetchTotalVotes: () => Promise<void>
+  fetchElectionConfig: () => Promise<void>
   addUser: (user: string) => void
   addFeedback: (entry: FeedbackEntry) => void
   setVotes: (votes: number[]) => void
@@ -39,6 +45,7 @@ export type SemaphoreContextType = {
 
 const SemaphoreContext = createContext<SemaphoreContextType | null>(null)
 
+// JSON-RPC provider for local dev
 const provider = new JsonRpcProvider("http://127.0.0.1:8545")
 const feedbackContract = new Contract(
   process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS!,
@@ -53,6 +60,11 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
   const [winner, setWinner] = useState<number | null>(null)
   const [currentRound, setCurrentRound] = useState<number>(1)
 
+  // dynamic parameters from contract
+  const [candidateCount, setCandidateCount] = useState<number>(0)
+  const [totalRounds, setTotalRounds] = useState<number>(0)
+
+  // refresh group members
   const refreshUsers = useCallback(async () => {
     try {
       const semaphore = new SemaphoreEthers("http://127.0.0.1:8545", {
@@ -67,6 +79,7 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
     }
   }, [])
 
+  // refresh feedback proofs
   const refreshFeedback = useCallback(async () => {
     try {
       const semaphore = new SemaphoreEthers("http://127.0.0.1:8545", {
@@ -77,9 +90,9 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
       )
       setFeedback(
         proofs.map((p: any) => {
-          const enc = parseInt(p.message.toString(), 10)
-          const c1 = Math.floor(enc / 100)
-          const c2 = enc % 100
+          const msg = parseInt(p.message.toString(), 10)
+          const c1 = Math.floor(msg / 100)
+          const c2 = msg % 100
           return {
             round: Number(p.scope.toString()),
             text: `Voted for #${c1} & #${c2}`
@@ -91,10 +104,23 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
     }
   }, [])
 
+  // fetch dynamic election parameters from contract
+  const fetchElectionConfig = useCallback(async () => {
+    try {
+      const rounds = await feedbackContract.totalRounds()
+      const candidates = await feedbackContract.candidateCount()
+      setTotalRounds(rounds.toNumber())
+      setCandidateCount(candidates.toNumber())
+    } catch (e) {
+      console.error("fetchElectionConfig error", e)
+    }
+  }, [])
+
+  // refresh votes for current round using dynamic candidateCount
   const refreshVotes = useCallback(async () => {
     try {
       const result: number[] = []
-      for (let i = 1; i <= 3; i++) {
+      for (let i = 1; i <= candidateCount; i++) {
         const count = await feedbackContract.getVotes(currentRound, i)
         result.push(Number(count.toString()))
       }
@@ -102,34 +128,21 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
     } catch (e) {
       console.error("refreshVotes error", e)
     }
-  }, [currentRound])
+  }, [currentRound, candidateCount])
 
-  /**
-   * Fetch winner and votes for the specified round
-   */
+  // fetch winner & set votes array
   const getWinner = useCallback(async (round: number) => {
     try {
       if (round === 1) {
         const w = await feedbackContract.getFinalResult(1)
-        setWinner(Number(w.toString()))
+        setWinner(w.toNumber())
       } else {
         const [w, totals] = await feedbackContract.getFinalResultTotal(round)
-        // totals is BigInt[], first element dummy
-        setVotes(totals.slice(1).map((v: any) => Number(v.toString())))
-        setWinner(Number(w.toString()))
+        setWinner(w.toNumber())
+        setVotes(totals.slice(1).map((v: any) => v.toNumber()))
       }
     } catch (e) {
       console.error("getWinner error", e)
-    }
-  }, [])
-
-  const fetchTotalVotes = useCallback(async () => {
-    try {
-      const res = await fetch("/api/feedback")
-      const data = await res.json()
-      setVotes(data.totalVotes.map(Number))
-    } catch (e) {
-      console.error("fetchTotalVotes error", e)
     }
   }, [])
 
@@ -141,12 +154,20 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
     setFeedback((prev) => [...prev, entry])
   }, [])
 
+  // initial load
   useEffect(() => {
+    fetchElectionConfig()
     refreshUsers()
     refreshFeedback()
-    refreshVotes()
-    getWinner(currentRound)
-  }, [refreshUsers, refreshFeedback, refreshVotes, getWinner, currentRound])
+  }, [fetchElectionConfig, refreshUsers, refreshFeedback])
+
+  // update votes/winner when round or params change
+  useEffect(() => {
+    if (candidateCount > 0) {
+      refreshVotes()
+      getWinner(currentRound)
+    }
+  }, [currentRound, candidateCount, refreshVotes, getWinner])
 
   return (
     <SemaphoreContext.Provider
@@ -161,10 +182,12 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
         refreshFeedback,
         refreshVotes,
         getWinner,
-        fetchTotalVotes,
         addUser,
         addFeedback,
-        setVotes
+        fetchElectionConfig,
+        setVotes,
+        candidateCount,
+        totalRounds
       }}
     >
       {children}

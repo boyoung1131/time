@@ -5,129 +5,119 @@ import { useLogContext } from "@/context/LogContext"
 import { useSemaphoreContext } from "@/context/SemaphoreContext"
 import { generateProof, Group } from "@semaphore-protocol/core"
 import { useRouter } from "next/navigation"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import useSemaphoreIdentity from "@/hooks/useSemaphoreIdentity"
 import { keccak256, AbiCoder } from "ethers"
 
 export default function ProofsPage() {
-    const router = useRouter()
-    const { setLog } = useLogContext()
-    const {
-        _users,
-        _feedback,
-        addFeedback,
-        refreshFeedback,
-        votes,
-        winner,
-        currentRound,
-        setCurrentRound,
-        refreshVotes,
-        setVotes,
-        getWinner,
-        fetchTotalVotes
-    } = useSemaphoreContext()
+  const router = useRouter()
+  const { setLog } = useLogContext()
+  const {
+    _users,
+    _feedback,
+    addFeedback,
+    refreshFeedback,
+    votes,
+    winner,
+    currentRound,
+    setCurrentRound,
+    refreshVotes,
+    setVotes,
+    getWinner
+  } = useSemaphoreContext()
 
-    const { _identity } = useSemaphoreIdentity()
-    const [phase, setPhase] = useState<"not-started" | "r1-commit" | "r1-reveal" | "r1-result" | "r2-commit" | "r2-reveal" | "r2-result">("not-started")
-    const [timeLeft, setTimeLeft] = useState<string>("")
-    const [loading, setLoading] = useState(false)
-    const [selectedCandidates, setSelectedCandidates] = useState<number[]>([])
-    const [salt, setSalt] = useState<string>("")
-    const [revealedRounds, setRevealedRounds] = useState<number[]>([])
-    const [votedRounds, setVotedRounds] = useState<number[]>([])
+  const { _identity } = useSemaphoreIdentity()
+  const [phase, setPhase] = useState<string>("not-started")
+  const [timeLeft, setTimeLeft] = useState<string>("")
+  const [loading, setLoading] = useState(false)
+  const [selectedCandidates, setSelectedCandidates] = useState<number[]>([])
+  const [salt, setSalt] = useState<string>("")
+  const [revealedRounds, setRevealedRounds] = useState<number[]>([])
+  const [votedRounds, setVotedRounds] = useState<number[]>([])
 
-    const feedback = useMemo(() => [..._feedback].reverse(), [_feedback])
-    const getVoteHash = (c1: number, c2: number, salt: string) => {
-      const sorted = [c1, c2].sort((a, b) => a - b)
-      const coder = AbiCoder.defaultAbiCoder()
-      const encoded = coder.encode(["uint256", "uint256", "uint256"], [sorted[0], sorted[1], salt])
-      return keccak256(encoded)
-}
+  // 動態參數
+  const [candidateCount, setCandidateCount] = useState<number>(0)
+  const [totalRounds, setTotalRounds] = useState<number>(0)
 
+  // 讀取初始化設定
   useEffect(() => {
-    setSelectedCandidates([])
-    setSalt("")
-  }, [phase])
+    fetch('/api/election/start')
+      .then(res => res.json())
+      .then(data => {
+        if (!data.initialized) return router.push('/ea')
+        setCandidateCount(data.candidateCount)
+        setTotalRounds(data.totalRounds)
+      })
+  }, [])
 
-  const fetchVotes = async (roundId: number) => {
-    try {
-        const res = await fetch(`/api/feedback?round=${roundId}`)
-        const data = await res.json()
-        setVotes(data.totalVotes.map(Number))
-      } catch (e) {
-          console.error("fetchVotes error", e)
-      }
-  }
+  // 階段計時 (5m commit,5m reveal,2m result)
   useEffect(() => {
-    if (phase === "r1-result") {
-        fetchVotes(1)
-        getWinner(1)
-    }
-
-    if (phase === "r2-result") {
-        fetchVotes(2)
-        getWinner(2)
-      }
-  }, [phase, getWinner])
-
-  useEffect(() => {
-    const startTimestamp = new Date("2025-05-25T16:13:00+08:00").getTime()
-    const updatePhase = () => {
-      const now = Date.now()
-      const elapsed = now - startTimestamp
-      const min = Math.floor(elapsed / 60000)
-
+    const start = Date.now()
+    const update = () => {
+      const elapsed = Math.floor((Date.now() - start) / 60000)
+      const commitDur = 5
+      const revealDur = 5
+      const resultDur = 2
+      const cycle = commitDur + revealDur + resultDur
       if (elapsed < 0) {
-        setPhase("not-started")
-        setTimeLeft("Voting not started")
+        setPhase('not-started')
+        setTimeLeft('Voting not started')
         return
       }
-      if (min < 5) {
-        setPhase("r1-commit")
-        setCurrentRound(1)
-        setTimeLeft(`${5 - min}m left to commit`)
-      } else if (min < 10) {
-        setPhase("r1-reveal")
-        setCurrentRound(1)
-        setTimeLeft(`${10 - min}m left to reveal`)
-      } else if (min < 12) {
-        setPhase("r1-result")
-        setCurrentRound(1)
-        setTimeLeft("Displaying R1 result")
-      } else if (min < 17) {
-        setPhase("r2-commit")
-        setCurrentRound(2)
-        setTimeLeft(`${17 - min}m left to commit`)
-      } else if (min < 22) {
-        setPhase("r2-reveal")
-        setCurrentRound(2)
-        setTimeLeft(`${22 - min}m left to reveal`)
-      } else if (min < 24) {
-        setPhase("r2-result")
-        setCurrentRound(2)
-        setTimeLeft("Final result")
+      const round = Math.floor(elapsed / cycle) + 1
+      if (round > totalRounds) {
+        setPhase(`r${totalRounds}-result`)
+        setTimeLeft('Voting completed')
+        return
+      }
+      setCurrentRound(round)
+      const within = elapsed % cycle
+      if (within < commitDur) {
+        setPhase(`r${round}-commit`)
+        setTimeLeft(`${commitDur - within}m left to commit`)
+      } else if (within < commitDur + revealDur) {
+        setPhase(`r${round}-reveal`)
+        setTimeLeft(`${commitDur + revealDur - within}m left to reveal`)
       } else {
-        setPhase("r2-result")
-        setTimeLeft("Voting completed")
+        setPhase(`r${round}-result`)
+        setTimeLeft(`${cycle - within}m until next round`)
       }
     }
-    updatePhase()
-    const timer = setInterval(updatePhase, 10000)
+    update()
+    const timer = setInterval(update, 10000)
     return () => clearInterval(timer)
-  }, [setCurrentRound])
+  }, [totalRounds])
 
+  // 切換階段時重置選擇與 salt
   useEffect(() => {
-    if (phase.includes("reveal")) {
-        setSalt("")
-      }
-    }, [phase, currentRound])
+    setSelectedCandidates([])
+    setSalt(Date.now().toString())
+  }, [phase, currentRound])
 
-  const toggleCandidate = useCallback((id: number) => {
+  // 結果階段抓票並決定勝者
+  useEffect(() => {
+    if (phase.endsWith('-result')) {
+      fetch(`/api/feedback?round=${currentRound}`)
+        .then(r => r.json())
+        .then(data => setVotes(data.totalVotes.map(Number)))
+      getWinner(currentRound)
+    }
+  }, [phase, currentRound])
+
+  const getVoteHash = (c1: number, c2: number, salt: string) => {
+    const sorted = [c1, c2].sort((a, b) => a - b)
+    const encoded = AbiCoder.defaultAbiCoder().encode(
+      ['uint256', 'uint256', 'uint256'], [sorted[0], sorted[1], salt]
+    )
+    return keccak256(encoded)
+  }
+
+  const toggleCandidate = (id: number) => {
     setSelectedCandidates(prev =>
-      prev.includes(id) ? prev.filter(c => c !== id)
+      prev.includes(id) ? prev.filter(x => x !== id)
         : prev.length < 2 ? [...prev, id] : prev
     )
-  }, [])
+  }
 
   const commitVote = async () => {
     if (!_identity || selectedCandidates.length !== 2 || votedRounds.includes(currentRound)) return
@@ -201,134 +191,152 @@ export default function ProofsPage() {
   }
 
   const renderResults = () => {
-    const maxVotes = Math.max(...votes)
-    const winners = votes.map((v, i) => ({ v, i: i + 1 })).filter(x => x.v === maxVotes)
+    const maxV = Math.max(...votes)
+    const winners = votes
+      .map((v, i) => ({ v, id: i + 1 }))
+      .filter(x => x.v === maxV)
+      .map(x => x.id)
 
-    if (phase === "r1-result" && currentRound === 1) {
-      return (
-        <div>
-          <p style={{ fontWeight: "bold", fontSize: "1.2rem" }}>
-            🏆 R1 Winner: Candidate {winners[0].i}
-          </p>
-        </div>
-      )
+    if (currentRound < totalRounds) {
+      return <p className="text-lg font-semibold">🏆 Round {currentRound} Winner: Candidate {winners.join(', ')}</p>
     }
-
-    if (phase === "r2-result" && currentRound === 2) {
-      return (
-        <div>
-          <p style={{ fontWeight: "bold", fontSize: "1.2rem" }}>
-            🏆 Final Winner{winners.length > 1 ? "s" : ""}:{" "}
-            {winners.map(w => `Candidate ${w.i}`).join(" & ")}
-          </p>
-          <ul>
-            {votes.map((v, i) => (
-              <li key={i}>Candidate {i + 1}: {v} vote{v !== 1 ? "s" : ""}</li>
-            ))}
-          </ul>
-        </div>
-      )
-    }
-    return null
+    return (
+      <div>
+        <p className="text-lg font-semibold">🏆 Final Winner{winners.length > 1 ? 's' : ''}: {winners.map(i => `Candidate ${i}`).join(' & ')}</p>
+        <ul className="mt-2">
+          {votes.map((v, i) => (
+            <li key={i}>Candidate {i + 1}: {v} votes</li>
+          ))}
+        </ul>
+      </div>
+    )
   }
 
+  const buttons = Array.from({ length: candidateCount }, (_, i) => i + 1)
+
   return (
-    <>
-      <h2>Proofs</h2>
-      <div className="divider" />
-      <div className="text-top">
-        <h3>Votes ({_feedback.length})</h3>
-        <button className="refresh-button" onClick={refreshFeedback}>Refresh</button>
-      </div>
+  <>
+    <h2>Proofs</h2>
+    <div className="divider" />
+    <div className="text-top">
+      <h3>Votes ({_feedback.length})</h3>
+      <button className="refresh-button" onClick={refreshFeedback}>Refresh</button>
+    </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "1.1rem", fontWeight: "500", marginBottom: "1rem" }}>
-        <span>⏳ {timeLeft}</span>
-        <span>🌀 Phase: {phase}</span>
-      </div>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        fontSize: "1.1rem",
+        fontWeight: "500",
+        marginBottom: "1rem",
+      }}
+    >
+      <span>⏳ {timeLeft}</span>
+      <span>🌀 Phase: {phase}</span>
+    </div>
 
-      {(phase.includes("commit") || phase.includes("reveal")) && (
-        <>
-            <div style={{ marginBottom: "1rem" }}>
-                <label>Select 2 candidates:</label>
-                <div style={{ display: "flex", gap: "1rem", marginTop: "0.5rem" }}>
-                {[1, 2, 3].map(id => (
-                    <button
-                    key={id}
-                    className={`button ${selectedCandidates.includes(id) ? "selected" : ""}`}
-                    disabled={loading}
-                    onClick={() => toggleCandidate(id)}
-                    >
-                    {selectedCandidates.includes(id) ? "✅" : "🗳️"} Candidate {id}
-                    </button>
-                ))}
-                </div>
-            </div>
-
-            {phase.includes("commit") && (
-            <>
-                <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                <input
-                    type="text"
-                    placeholder="Enter salt"
-                    value={salt}
-                    onChange={(e) => setSalt(e.target.value)}
-                    className="input"
-                    style={{ flex: 1 }}
-                />
-                <button
-                    className="button"
-                    disabled={loading}
-                    onClick={() => {
-                    const newSalt = Math.floor(100000 + Math.random() * 900000).toString()
-                    localStorage.setItem(`salt-round-${currentRound}`, newSalt)
-                    setSalt(newSalt)
-                    }}
-                >
-                    🎲 Generate Salt
-                </button>
-                </div>
-                <button
-                className="button"
-                disabled={selectedCandidates.length !== 2 || !salt || loading}
-                onClick={commitVote}
-                >
-                {loading ? "Committing..." : "🔐 Commit Vote"}
-                </button>
-            </>
-            )}
-
-
-          {phase.includes("reveal") && (
-            <>
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.5rem" }}>
-                <input
-                  type="text"
-                  placeholder="Reveal salt"
-                  value={salt}
-                  onChange={(e) => setSalt(e.target.value)}
-                  className="input"
-                  style={{ width: "200px" , height: "40px" }}
-                />
-                <button
-                  className="button"
-                  disabled={selectedCandidates.length !== 2 || !salt || loading}
-                  onClick={revealVote}
-                >
-                  {loading ? "Revealing..." : "📢 Reveal Vote"}
-                </button>
-              </div>
-            </>
-          )}
-        </>
-      )}
-      {(phase === "r1-result" || phase === "r2-result") && (
-        <div style={{ marginTop: "2rem" }}>
-          {renderResults()}
+    {/* 投票區塊 */}
+    {(phase.includes("commit") || phase.includes("reveal")) && (
+      <div className="mb-4">
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          {buttons.map((id) => (
+            <button
+              key={id}
+              onClick={() => toggleCandidate(id)}
+              disabled={
+                loading ||
+                (phase.includes("commit") && votedRounds.includes(currentRound)) ||
+                (phase.includes("reveal") && revealedRounds.includes(currentRound))
+              }
+              className={`p-4 rounded ${
+                selectedCandidates.includes(id)
+                  ? "bg-green-500"
+                  : "bg-gray-700 hover:bg-gray-600"
+              } disabled:opacity-50`}
+            >
+              候選人 {id}
+            </button>
+          ))}
         </div>
-      )}
 
-      <div className="divider" />
-      <Stepper step={3} onPrevClick={() => router.push("/group")} />
-    </>
-  )
-}
+        {/* Commit 階段 */}
+        {phase.includes("commit") && (
+          <>
+            <div className="button">
+              <input
+                type="text"
+                readOnly
+                value={salt}
+                placeholder="尚未產生 Salt"
+                className="button"
+              />
+              <button
+                onClick={() => {
+                  const newSalt = Math.floor(100000 + Math.random() * 900000).toString();
+                  localStorage.setItem(`salt-round-${currentRound}`, newSalt);
+                  setSalt(newSalt);
+                }}
+                disabled={loading || votedRounds.includes(currentRound)}
+                className="button"
+              >
+                🎲 Generate Salt
+              </button>
+            </div>
+            <button
+              onClick={commitVote}
+              disabled={selectedCandidates.length !== 2 || !salt || loading}
+              className="button"
+            >
+              {loading ? "Committing..." : "🔐 Commit Vote"}
+            </button>
+          </>
+        )}
+
+        {/* Reveal 階段 */}
+        {phase.includes("reveal") && (
+          <>
+            <div
+              style={{
+                display: "flex",
+                gap: "0.5rem",
+                alignItems: "center",
+                marginBottom: "0.5rem",
+              }}
+            >
+              <input
+                type="text"
+                placeholder="Reveal salt"
+                value={salt}
+                onChange={(e) => setSalt(e.target.value)}
+                className="input"
+                style={{ width: "200px", height: "40px" }}
+              />
+              <button
+                onClick={revealVote}
+                disabled={selectedCandidates.length !== 2 || !salt || loading}
+                className="button"
+              >
+                {loading ? "Revealing..." : "📢 Reveal Vote"}
+              </button>
+            </div>
+          </>
+        )}
+      </div> // ✅ 加上這行結束 commit/reveal 整體區塊
+    )}
+
+    {/* 結果階段 */}
+    {phase.endsWith("-result") && (
+      <div className="mt-8 space-y-4">
+        {renderResults()}
+        {currentRound < totalRounds && (
+          <p className="text-center text-lg">下一回合將在 {timeLeft} 分鐘後自動開始</p>
+        )}
+      </div>
+    )}
+
+    <div className="divider" />
+    <Stepper step={3} onPrevClick={() => router.push("/group")} />
+  </>
+)}
