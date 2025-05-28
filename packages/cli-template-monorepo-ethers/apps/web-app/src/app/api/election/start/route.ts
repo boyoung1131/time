@@ -1,5 +1,3 @@
-// src/app/api/election/start/route.ts
-
 import { NextRequest, NextResponse } from "next/server";
 import {
   Contract,
@@ -11,23 +9,16 @@ import {
 import FeedbackABI from "../../../../../contract-artifacts/Feedback.json";
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS!;
-const NETWORK            = process.env.NEXT_PUBLIC_DEFAULT_NETWORK!;
-const INFURA_KEY         = process.env.NEXT_PUBLIC_INFURA_API_KEY!;
-const PRIVATE_KEY        = process.env.ETHEREUM_PRIVATE_KEY!;
+const NETWORK          = process.env.NEXT_PUBLIC_DEFAULT_NETWORK!;
+const INFURA_KEY       = process.env.NEXT_PUBLIC_INFURA_API_KEY!;
+const PRIVATE_KEY      = process.env.ETHEREUM_PRIVATE_KEY!;
 
-/**
- * 根據環境回傳 Provider（本地或 Infura）
- */
 function getProvider() {
   return NETWORK === "localhost"
     ? new JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL)
     : new InfuraProvider(NETWORK, INFURA_KEY);
 }
 
-/**
- * GET /api/election/start
- * 讀取選舉初始化狀態與參數
- */
 export async function GET(_: NextRequest) {
   try {
     const provider = getProvider();
@@ -36,12 +27,20 @@ export async function GET(_: NextRequest) {
     const electionAuthority = await contract.electionAuthority();
     const totalRounds       = await contract.totalRounds();
     const candidateCount    = await contract.candidateCount();
+    const commitTime        = await contract.commitDuration();
+    const revealTime        = await contract.revealDuration();
+    const resultTime        = await contract.resultDuration();
+    const round1Start       = await contract.roundStartTime(1);
 
     return NextResponse.json({
       initialized: electionAuthority !== ethers.ZeroAddress,
       electionAuthority,
       totalRounds: Number(totalRounds),
       candidateCount: Number(candidateCount),
+      commitTime: Number(commitTime) / 60,
+      revealTime: Number(revealTime) / 60,
+      resultTime: Number(resultTime) / 60,
+      startTimestamp: Number(round1Start),
     });
   } catch (err: any) {
     console.error("GET /api/election/start 讀取失敗：", err);
@@ -52,34 +51,46 @@ export async function GET(_: NextRequest) {
   }
 }
 
-/**
- * POST /api/election/start
- * 初始化選舉參數：設定回合數與候選人數
- */
 export async function POST(req: NextRequest) {
   try {
-    const { totalRounds, candidateCount } = await req.json();
+    const {
+      totalRounds,
+      candidateCount,
+      commitTime,
+      revealTime,
+      resultTime,
+      startTimestamp,
+    } = await req.json();
 
-    // 參數基本檢查
     if (
       typeof totalRounds !== "number" || totalRounds < 1 ||
-      typeof candidateCount !== "number" || candidateCount < 1
+      typeof candidateCount !== "number" || candidateCount < 1 ||
+      typeof commitTime !== "number" || commitTime < 1 ||
+      typeof revealTime !== "number" || revealTime < 1 ||
+      typeof resultTime !== "number" || resultTime < 1 ||
+      typeof startTimestamp !== "number" || startTimestamp < 1
     ) {
       return NextResponse.json(
-        { success: false, error: "參數錯誤：請傳入有效的 totalRounds 與 candidateCount" },
+        { success: false, error: "請傳入有效的選舉參數" },
         { status: 400 }
       );
     }
 
-    const provider = getProvider()
+    const provider = getProvider();
     const signer = NETWORK === "localhost"
-        ? await provider.getSigner(0)             
-        : new Wallet(PRIVATE_KEY, provider);
+      ? await provider.getSigner(0)
+      : new Wallet(PRIVATE_KEY, provider);
 
     const contract = new Contract(CONTRACT_ADDRESS, FeedbackABI.abi, signer);
 
-    // 呼叫 initializeElection 並等待確認
-    const tx = await contract.initializeElection(totalRounds, candidateCount);
+    const tx = await contract.initializeElection(
+      totalRounds,
+      candidateCount,
+      commitTime * 60,
+      revealTime * 60,
+      resultTime * 60,
+      startTimestamp
+    );
     const receipt = await tx.wait();
 
     return NextResponse.json({

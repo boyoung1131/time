@@ -18,21 +18,18 @@ export type FeedbackEntry = {
 }
 
 export type SemaphoreContextType = {
-  // on-chain users
   _users: string[]
-  // raw feedback entries
   _feedback: FeedbackEntry[]
-  // dynamic vote tallies for current round
   votes: number[]
-  // winner of the current round or final
   winner: number | null
-  // dynamic parameters
   candidateCount: number
   totalRounds: number
-  // current active round
+  commitDuration: number
+  revealDuration: number
+  resultDuration: number
   currentRound: number
+  startTimestamp: number
   setCurrentRound: (round: number) => void
-  // fetch helpers
   refreshUsers: () => Promise<void>
   refreshFeedback: () => Promise<void>
   refreshVotes: () => Promise<void>
@@ -45,7 +42,6 @@ export type SemaphoreContextType = {
 
 const SemaphoreContext = createContext<SemaphoreContextType | null>(null)
 
-// JSON-RPC provider for local dev
 const provider = new JsonRpcProvider("http://127.0.0.1:8545")
 const feedbackContract = new Contract(
   process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS!,
@@ -59,12 +55,13 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
   const [votes, setVotes] = useState<number[]>([])
   const [winner, setWinner] = useState<number | null>(null)
   const [currentRound, setCurrentRound] = useState<number>(1)
-
-  // dynamic parameters from contract
+  const [commitDuration, setCommitDuration] = useState<number>(0)
+  const [revealDuration, setRevealDuration] = useState<number>(0)
+  const [resultDuration, setResultDuration] = useState<number>(0)
   const [candidateCount, setCandidateCount] = useState<number>(0)
   const [totalRounds, setTotalRounds] = useState<number>(0)
+  const [startTimestamp, setStartTimestamp] = useState<number>(0)
 
-  // refresh group members
   const refreshUsers = useCallback(async () => {
     try {
       const semaphore = new SemaphoreEthers("http://127.0.0.1:8545", {
@@ -79,7 +76,6 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
     }
   }, [])
 
-  // refresh feedback proofs
   const refreshFeedback = useCallback(async () => {
     try {
       const semaphore = new SemaphoreEthers("http://127.0.0.1:8545", {
@@ -104,19 +100,26 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
     }
   }, [])
 
-  // fetch dynamic election parameters from contract
   const fetchElectionConfig = useCallback(async () => {
     try {
       const rounds = await feedbackContract.totalRounds()
       const candidates = await feedbackContract.candidateCount()
+      const commit = await feedbackContract.commitDuration()
+      const reveal = await feedbackContract.revealDuration()
+      const result = await feedbackContract.resultDuration()
+      const start = await feedbackContract.startTimestamp()
+
       setTotalRounds(rounds.toNumber())
       setCandidateCount(candidates.toNumber())
+      setCommitDuration(commit.toNumber())
+      setRevealDuration(reveal.toNumber())
+      setResultDuration(result.toNumber())
+      setStartTimestamp(start.toNumber() * 1000)
     } catch (e) {
       console.error("fetchElectionConfig error", e)
     }
   }, [])
 
-  // refresh votes for current round using dynamic candidateCount
   const refreshVotes = useCallback(async () => {
     try {
       const result: number[] = []
@@ -130,7 +133,6 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
     }
   }, [currentRound, candidateCount])
 
-  // fetch winner & set votes array
   const getWinner = useCallback(async (round: number) => {
     try {
       if (round === 1) {
@@ -154,14 +156,12 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
     setFeedback((prev) => [...prev, entry])
   }, [])
 
-  // initial load
   useEffect(() => {
     fetchElectionConfig()
     refreshUsers()
     refreshFeedback()
   }, [fetchElectionConfig, refreshUsers, refreshFeedback])
 
-  // update votes/winner when round or params change
   useEffect(() => {
     if (candidateCount > 0) {
       refreshVotes()
@@ -187,7 +187,11 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
         fetchElectionConfig,
         setVotes,
         candidateCount,
-        totalRounds
+        totalRounds,
+        commitDuration,
+        revealDuration,
+        resultDuration,
+        startTimestamp
       }}
     >
       {children}

@@ -371,3 +371,24 @@ a:hover {
     }
 }
 
+/* 讓數字輸入框的文字變大，箭頭也跟着放大 */
+input[type="number"] {
+  padding-left: 0.5rem;
+  font-size: 1.25rem;     
+  line-height: 1.5;
+}
+
+/* Chrome / Edge / Safari */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  width: 5em;   /* 箭頭宽度 */
+  height: 1.5em;  /* 箭頭高度 */
+}
+
+/* Firefox */
+input[type="number"] {
+  -moz-appearance: textfield;      
+}
+input[type="number"]::-moz-number-field {
+  font-size: 1.25rem;             
+}

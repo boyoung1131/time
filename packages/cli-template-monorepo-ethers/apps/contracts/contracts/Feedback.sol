@@ -7,28 +7,85 @@ contract Feedback {
     ISemaphore public semaphore;
     uint256 public groupId;
     uint256 public candidateCount;
+    uint256 public totalRounds;
+    address public electionAuthority;
+
+    uint256 public commitDuration;
+    uint256 public revealDuration;
+    uint256 public resultDuration;
+    uint256 public startTimestamp;
+
+    mapping(uint256 => uint256) public roundStartTime;
 
     struct Commitment {
-        uint256 voteHash;  // keccak256(candidateId1, candidateId2, salt)
+        uint256 voteHash;
         bool revealed;
     }
 
     mapping(uint256 => mapping(uint256 => Commitment)) public commitments;
-    // roundId => nullifier => Commitment
-
     mapping(uint256 => mapping(uint256 => uint256)) public votes;
-    // roundId => candidateId => vote count
-
     mapping(uint256 => mapping(uint256 => bool)) public nullifiers;
-    // roundId => nullifier => used or not
 
     event VoteCommitted(uint256 indexed roundId, uint256 indexed nullifier, uint256 voteHash);
     event VoteSubmitted(uint256 indexed roundId, uint256 indexed nullifier, uint256 candidateId1, uint256 candidateId2);
 
+    modifier onlyEA() {
+        require(msg.sender == electionAuthority, "Not authorized");
+        _;
+    }
+
     constructor(address semaphoreAddress) {
         semaphore = ISemaphore(semaphoreAddress);
-        candidateCount = 3;
         groupId = semaphore.createGroup();
+    }
+
+    function initializeElection(
+        uint256 _rounds,
+        uint256 _candidates,
+        uint256 _commitDuration,
+        uint256 _revealDuration,
+        uint256 _resultDuration,
+        uint256 _startTimestamp
+    ) external {
+        require(electionAuthority == address(0), "Already initialized");
+        require(_rounds > 0, "Rounds must be > 0");
+        require(_candidates > 0, "Candidates must be > 0");
+
+        electionAuthority = msg.sender;
+        totalRounds = _rounds;
+        candidateCount = _candidates;
+
+        commitDuration = _commitDuration;
+        revealDuration = _revealDuration;
+        resultDuration = _resultDuration;
+
+        startTimestamp= _startTimestamp;
+        roundStartTime[1] = _startTimestamp;
+
+    }
+
+    function startRound(uint256 roundId) external onlyEA {
+        require(roundId >= 1 && roundId <= totalRounds, "Invalid round");
+        require(roundStartTime[roundId] == 0, "Round already started");
+        roundStartTime[roundId] = block.timestamp;
+    }
+
+    function getCurrentPhase(uint256 roundId) public view returns (string memory) {
+        uint256 start = roundStartTime[roundId];
+        require(start != 0, "Round not started");
+        require(roundId >= 1 && roundId <= totalRounds, "Invalid round");
+
+        uint256 elapsed = block.timestamp - start;
+
+        if (elapsed < commitDuration) {
+            return "commit";
+        } else if (elapsed < commitDuration + revealDuration) {
+            return "reveal";
+        } else if (elapsed < commitDuration + revealDuration + resultDuration) {
+            return "result";
+        } else {
+            return "ended";
+        }
     }
 
     function joinGroup(uint256 identityCommitment) external {
@@ -40,9 +97,11 @@ contract Feedback {
         uint256 merkleTreeRoot,
         uint256 nullifier,
         uint256 voteHash,
-        uint256 externalNullifier, // roundId
+        uint256 externalNullifier,
         uint256[8] calldata points
     ) external {
+        require(electionAuthority != address(0), "Election not initialized");
+        require(externalNullifier >= 1 && externalNullifier <= totalRounds, "Invalid round");
         require(!nullifiers[externalNullifier][nullifier], "Already committed");
 
         ISemaphore.SemaphoreProof memory proof = ISemaphore.SemaphoreProof(
@@ -59,8 +118,8 @@ contract Feedback {
             voteHash: voteHash,
             revealed: false
         });
-
         nullifiers[externalNullifier][nullifier] = true;
+
         emit VoteCommitted(externalNullifier, nullifier, voteHash);
     }
 
@@ -71,6 +130,9 @@ contract Feedback {
         uint256 candidateId2,
         uint256 salt
     ) external {
+        require(electionAuthority != address(0), "Election not initialized");
+        require(roundId >= 1 && roundId <= totalRounds, "Invalid round");
+
         Commitment storage c = commitments[roundId][nullifier];
         require(!c.revealed, "Already revealed");
 
@@ -102,15 +164,10 @@ contract Feedback {
         }
     }
 
-    function totalVotes(uint256 roundId) external view returns (uint256 total) {
-        for (uint256 i = 1; i <= candidateCount; i++) {
-            total += votes[roundId][i];
-        }
-    }
-
     function getFinalResultTotal(uint256 upToRound) external view returns (uint256 winnerId, uint256[] memory totalVotesPerCandidate) {
-        totalVotesPerCandidate = new uint256[](candidateCount + 1); // index from 1
-        uint256 maxVotes = 0;
+        require(upToRound >= 1 && upToRound <= totalRounds, "Invalid round");
+        totalVotesPerCandidate = new uint256[](candidateCount + 1);
+        uint256 maxVotes;
 
         for (uint256 round = 1; round <= upToRound; round++) {
             for (uint256 candidate = 1; candidate <= candidateCount; candidate++) {
