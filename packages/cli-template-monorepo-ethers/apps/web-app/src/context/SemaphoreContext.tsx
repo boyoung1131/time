@@ -94,12 +94,12 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
             const result = await feedbackContract.resultDuration()
             const start = await feedbackContract.startTimestamp()
 
-            setTotalRounds(rounds.toNumber()) // bug
-            setCandidateCount(candidates.toNumber())
-            setCommitDuration(commit.toNumber())
-            setRevealDuration(reveal.toNumber())
-            setResultDuration(result.toNumber())
-            setStartTimestamp(start.toNumber() * 1000)
+            setTotalRounds(Number(rounds))
+            setCandidateCount(Number(candidates))
+            setCommitDuration(Number(commit))
+            setRevealDuration(Number(reveal))
+            setResultDuration(Number(result))
+            setStartTimestamp(Number(start) * 1000)
         } catch (e) {
             console.error("fetchElectionConfig error", e)
         }
@@ -122,11 +122,11 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
         try {
             if (round === 1) {
                 const w = await feedbackContract.getFinalResult(1)
-                setWinner(w.toNumber())
+                setWinner(Number(w))
             } else {
                 const [w, totals] = await feedbackContract.getFinalResultTotal(round)
-                setWinner(w.toNumber())
-                setVotes(totals.slice(1).map((v: any) => v.toNumber()))
+                setWinner(Number(w))
+                setVotes(totals.slice(1).map((v: any) => Number(v)))
             }
         } catch (e) {
             console.error("getWinner error", e)
