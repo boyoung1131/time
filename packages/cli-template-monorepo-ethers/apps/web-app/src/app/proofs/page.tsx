@@ -125,9 +125,19 @@ export default function ProofsPage() {
     }
 
     const toggleCandidate = (id: number) => {
-        setSelectedCandidates((prev) =>
-            prev.includes(id) ? prev.filter((x) => x !== id) : prev.length < 2 ? [...prev, id] : prev
-        )
+        setSelectedCandidates((prev) => {
+            const count = prev.filter((x) => x === id).length
+
+            if (count === 2) {
+                return prev.filter((x) => x !== id)
+            }
+            const updated = [...prev, id]
+            // 保證最多兩票：從頭開始砍掉多的
+            while (updated.length > 2) {
+                updated.shift()
+            }
+            return updated
+        })
     }
 
     const commitVote = async () => {
@@ -271,7 +281,7 @@ export default function ProofsPage() {
                             }}
                         >
                             {buttons.map((id) => {
-                                const isSelected = selectedCandidates.includes(id)
+                                const selectedCount = selectedCandidates.filter((x) => x === id).length
                                 return (
                                     <button
                                         key={id}
@@ -281,9 +291,9 @@ export default function ProofsPage() {
                                             (phase.includes("commit") && votedRounds.includes(currentRound)) ||
                                             (phase.includes("reveal") && revealedRounds.includes(currentRound))
                                         }
-                                        className={`button ${selectedCandidates.includes(id) ? "selected" : ""}`}
+                                        className={`button ${selectedCount > 0 ? "selected" : ""}`}
                                     >
-                                        {isSelected ? "✅" : "📦"} Candidate {id}
+                                        {selectedCount === 2 ? "✅✅" : selectedCount === 1 ? "✅" : "📦"} Candidate {id}
                                     </button>
                                 )
                             })}
