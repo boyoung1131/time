@@ -1,131 +1,94 @@
-import { NextRequest, NextResponse } from "next/server";
-import { Contract, InfuraProvider, JsonRpcProvider, Wallet } from "ethers";
-import FeedbackABI from "../../../../contract-artifacts/Feedback.json";
+import { NextRequest, NextResponse } from "next/server"
+import { Contract, InfuraProvider, JsonRpcProvider, Wallet } from "ethers"
+import FeedbackABI from "../../../../contract-artifacts/Feedback.json"
 
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS!;
-const NETWORK          = process.env.NEXT_PUBLIC_DEFAULT_NETWORK!;
-const INFURA_KEY       = process.env.NEXT_PUBLIC_INFURA_API_KEY!;
-const PRIVATE_KEY      = process.env.ETHEREUM_PRIVATE_KEY!;
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS!
+const NETWORK = process.env.NEXT_PUBLIC_DEFAULT_NETWORK!
+const INFURA_KEY = process.env.NEXT_PUBLIC_INFURA_API_KEY!
+const PRIVATE_KEY = process.env.ETHEREUM_PRIVATE_KEY!
 
 function getProvider() {
-  return NETWORK === "localhost"
-    ? new JsonRpcProvider("http://127.0.0.1:8545")
-    : new InfuraProvider(NETWORK, INFURA_KEY);
+    return NETWORK === "localhost"
+        ? new JsonRpcProvider("http://127.0.0.1:8545")
+        : new InfuraProvider(NETWORK, INFURA_KEY)
 }
 
 export async function GET(request: NextRequest) {
-  try {
-    const url = new URL(request.url);
-    const roundParam = url.searchParams.get("round");
-    const round = roundParam ? parseInt(roundParam, 10) : 0;
+    try {
+        const url = new URL(request.url)
+        const roundParam = url.searchParams.get("round")
+        const round = roundParam ? parseInt(roundParam, 10) : 0
 
-    if (round < 1) {
-      return NextResponse.json(
-        { error: "Missing or invalid round parameter" },
-        { status: 400 }
-      );
+        if (round < 1) {
+            return NextResponse.json({ error: "Missing or invalid round parameter" }, { status: 400 })
+        }
+
+        const provider = getProvider()
+        const contract = new Contract(CONTRACT_ADDRESS, FeedbackABI.abi, provider)
+
+        // —— 讀取合約上的回合數與候選人數 ——
+        const rawRounds = await contract.totalRounds()
+        const rawCandidates = await contract.candidateCount()
+
+        const totalRounds = Number(rawRounds)
+        const candidateCount = Number(rawCandidates)
+
+        if (round > totalRounds) {
+            return NextResponse.json({ error: `Round must be between 1 and ${totalRounds}` }, { status: 400 })
+        }
+
+        const [_, totals] = await contract.getFinalResultTotal(round)
+        const strTotals = totals.slice(1).map((v: any) => v.toString())
+
+        return NextResponse.json({ totalVotes: strTotals })
+    } catch (err: any) {
+        console.error("GET /api/feedback error:", err)
+        return NextResponse.json({ error: err.message || "Unknown error" }, { status: 500 })
     }
-
-    const provider = getProvider();
-    const contract = new Contract(CONTRACT_ADDRESS, FeedbackABI.abi, provider);
-
-    // —— 关键：读取合约上的回合数和候选人数 —— 
-    const rawRounds     = await contract.totalRounds();
-    const rawCandidates = await contract.candidateCount();
-
-  
-    const totalRounds    = Number(rawRounds);
-    const candidateCount = Number(rawCandidates);
-
-
-
-    if (round > totalRounds) {
-      return NextResponse.json(
-        { error: `Round must be between 1 and ${totalRounds}` },
-        { status: 400 }
-      );
-    }
-
-    // 使用 getFinalResultTotal 回傳累積票數
-    // 回傳值：[winnerId, uint256[] totalVotesPerCandidate]
-    const [_, totals] = await contract.getFinalResultTotal(round);
-    // totals 是個陣列，index 0 並未使用，我們 slice 掉
-    const strTotals = totals.slice(1).map((v: any) => v.toString());
-
-    return NextResponse.json({ totalVotes: strTotals });
-  } catch (err: any) {
-    console.error("GET /api/feedback error:", err);
-    return NextResponse.json(
-      { error: err.message || "Unknown error" },
-      { status: 500 }
-    );
-  }
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const provider = getProvider();
+    try {
+        const body = await request.json()
+        const provider = getProvider()
 
-    // 本地測試網簽名者
-    const signer =
-      NETWORK === "localhost"
-        ? await provider.getSigner(0)
-        : new Wallet(PRIVATE_KEY, provider);
+        // 本地測試網簽名者
+        const signer = NETWORK === "localhost" ? await provider.getSigner(0) : new Wallet(PRIVATE_KEY, provider)
 
-    const contract = new Contract(CONTRACT_ADDRESS, FeedbackABI.abi, signer);
+        const contract = new Contract(CONTRACT_ADDRESS, FeedbackABI.abi, signer)
 
-    // --- Commit 模式 ---
-    if (
-      "voteHash" in body &&
-      "merkleTreeDepth" in body &&
-      "merkleTreeRoot" in body &&
-      "nullifier" in body &&
-      "round" in body &&
-      "points" in body
-    ) {
-      const { merkleTreeDepth, merkleTreeRoot, nullifier, voteHash, round, points } = body;
-      const tx = await contract.commitVote(
-        merkleTreeDepth,
-        merkleTreeRoot,
-        nullifier,
-        voteHash,
-        round,
-        points
-      );
-      await tx.wait();
-      return NextResponse.json({ message: `✅ Commit success in round ${round}` });
+        // --- Commit 模式 ---
+        if (
+            "voteHash" in body &&
+            "merkleTreeDepth" in body &&
+            "merkleTreeRoot" in body &&
+            "nullifier" in body &&
+            "round" in body &&
+            "points" in body
+        ) {
+            const { merkleTreeDepth, merkleTreeRoot, nullifier, voteHash, round, points } = body
+            const tx = await contract.commitVote(merkleTreeDepth, merkleTreeRoot, nullifier, voteHash, round, points)
+            await tx.wait()
+            return NextResponse.json({ message: `✅ Commit success in round ${round}` })
+        }
+
+        // --- Reveal 模式 ---
+        if (
+            "candidateId1" in body &&
+            "candidateId2" in body &&
+            "salt" in body &&
+            "round" in body &&
+            "nullifier" in body
+        ) {
+            const { round, nullifier, candidateId1, candidateId2, salt } = body
+            const tx = await contract.revealVote(round, nullifier, candidateId1, candidateId2, salt)
+            await tx.wait()
+            return NextResponse.json({ message: `✅ Reveal success in round ${round}` })
+        }
+
+        return NextResponse.json({ error: "Missing required fields for commit or reveal" }, { status: 400 })
+    } catch (error: any) {
+        console.error("POST /api/feedback error:", error)
+        return NextResponse.json({ error: error.message || "Unknown error" }, { status: 500 })
     }
-
-    // --- Reveal 模式 ---
-    if (
-      "candidateId1" in body &&
-      "candidateId2" in body &&
-      "salt" in body &&
-      "round" in body &&
-      "nullifier" in body
-    ) {
-      const { round, nullifier, candidateId1, candidateId2, salt } = body;
-      const tx = await contract.revealVote(
-        round,
-        nullifier,
-        candidateId1,
-        candidateId2,
-        salt
-      );
-      await tx.wait();
-      return NextResponse.json({ message: `✅ Reveal success in round ${round}` });
-    }
-
-    return NextResponse.json(
-      { error: "Missing required fields for commit or reveal" },
-      { status: 400 }
-    );
-  } catch (error: any) {
-    console.error("POST /api/feedback error:", error);
-    return NextResponse.json(
-      { error: error.message || "Unknown error" },
-      { status: 500 }
-    );
-  }
 }
