@@ -202,7 +202,7 @@ export default function ProofsPage() {
                 await refreshVotes()
             } else {
                 const msg = await res.text()
-                setLog(msg.includes("Duplicate") ? "❌ You already voted in this round." : "❌ Commit failed.")
+                setLog(msg.includes("Duplicate") ? "❌ You already revealed in this round." : "❌ Reveal failed.")
             }
         } catch (e) {
             console.error(e)
