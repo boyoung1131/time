@@ -17,6 +17,8 @@ contract Feedback {
 
     mapping(uint256 => uint256) public roundStartTime;
 
+    mapping(uint256 => uint256[]) public revealedSalts;
+
     struct Commitment {
         uint256 voteHash;
         bool revealed;
@@ -59,16 +61,11 @@ contract Feedback {
         revealDuration = _revealDuration;
         resultDuration = _resultDuration;
 
-        startTimestamp= _startTimestamp;
-        roundStartTime[1] = _startTimestamp;
-
+        for (uint256 i = 1; i <= _rounds; i++) {
+            roundStartTime[i] = _startTimestamp + (i - 1) * (commitDuration + revealDuration + resultDuration);
+        }
     }
 
-    function startRound(uint256 roundId) external onlyEA {
-        require(roundId >= 1 && roundId <= totalRounds, "Invalid round");
-        require(roundStartTime[roundId] == 0, "Round already started");
-        roundStartTime[roundId] = block.timestamp;
-    }
 
     function getCurrentPhase(uint256 roundId) public view returns (string memory) {
         uint256 start = roundStartTime[roundId];
@@ -104,6 +101,11 @@ contract Feedback {
         require(externalNullifier >= 1 && externalNullifier <= totalRounds, "Invalid round");
         require(!nullifiers[externalNullifier][nullifier], "Already committed");
 
+        require(
+            keccak256(abi.encodePacked(getCurrentPhase(externalNullifier))) == keccak256(abi.encodePacked("commit")),
+            "Not in commit phase"
+        );
+
         ISemaphore.SemaphoreProof memory proof = ISemaphore.SemaphoreProof(
             merkleTreeDepth,
             merkleTreeRoot,
@@ -133,6 +135,11 @@ contract Feedback {
         require(electionAuthority != address(0), "Election not initialized");
         require(roundId >= 1 && roundId <= totalRounds, "Invalid round");
 
+        require(
+        keccak256(abi.encodePacked(getCurrentPhase(roundId))) == keccak256(abi.encodePacked("reveal")),
+            "Not in reveal phase"
+        );
+
         Commitment storage c = commitments[roundId][nullifier];
         require(!c.revealed, "Already revealed");
 
@@ -146,7 +153,12 @@ contract Feedback {
         votes[roundId][candidateId2]++;
         c.revealed = true;
 
+        revealedSalts[roundId].push(salt);
         emit VoteSubmitted(roundId, nullifier, candidateId1, candidateId2);
+    }
+
+    function getRevealedSalts(uint256 roundId) public view returns (uint256[] memory) {
+        return revealedSalts[roundId];
     }
 
     function getVotes(uint256 roundId, uint256 candidateId) external view returns (uint256) {
