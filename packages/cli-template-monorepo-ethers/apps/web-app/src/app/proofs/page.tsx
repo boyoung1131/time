@@ -37,7 +37,7 @@ export default function ProofsPage() {
     const [salt, setSalt] = useState<string>("")
     const [revealedRounds, setRevealedRounds] = useState<number[]>([])
     const [votedRounds, setVotedRounds] = useState<number[]>([])
-
+    const [revealedSalts, setRevealedSalts] = useState<string[]>([])
     // 動態參數
     const [candidateCount, setCandidateCount] = useState<number>(0)
     const [totalRounds, setTotalRounds] = useState<number>(0)
@@ -110,7 +110,9 @@ export default function ProofsPage() {
         if (phase.endsWith("-result")) {
             fetch(`/api/feedback?round=${currentRound}`)
                 .then((r) => r.json())
-                .then((data) => setVotes(data.totalVotes.map(Number)))
+                .then((data) => {
+                    setRevealedSalts(data.salts)
+                })
             getWinner(currentRound)
         }
     }, [phase, currentRound])
@@ -212,31 +214,60 @@ export default function ProofsPage() {
     }
 
     const renderResults = () => {
+        if (!votes || votes.length === 0) {
+            return <p className="text-lg text-gray-400">⚠️ No votes recorded yet.</p>
+        }
+
         const maxV = Math.max(...votes)
         const winners = votes
             .map((v, i) => ({ v, id: i + 1 }))
-            .filter((x) => x.v === maxV)
+            .filter((x) => x.v === maxV && maxV > 0)
             .map((x) => x.id)
 
-        if (currentRound < totalRounds) {
-            return (
-                <p className="text-lg font-semibold">
-                    🏆 Round {currentRound} Winner: Candidate {winners.join(", ")}
-                </p>
-            )
-        }
         return (
             <div>
+                {/* 顯示勝者資訊 */}
                 <p className="text-lg font-semibold">
-                    🏆 Final Winner{winners.length > 1 ? "s" : ""}: {winners.map((i) => `Candidate ${i}`).join(" & ")}
+                    {winners.length > 0
+                        ? currentRound < totalRounds
+                            ? `🏆 Round ${currentRound} Winner: Candidate ${winners.join(", ")}`
+                            : `🏆 Final Winner${winners.length > 1 ? "s" : ""}: ${winners.map((i) => `Candidate ${i}`).join(" & ")}`
+                        : `🏆 Round ${currentRound} Winner: (no winner)`}
                 </p>
-                <ul className="mt-2">
-                    {votes.map((v, i) => (
-                        <li key={i}>
-                            Candidate {i + 1}: {v} votes
-                        </li>
-                    ))}
-                </ul>
+
+                {/* 顯示票數（僅在最後一輪） */}
+                {currentRound === totalRounds && (
+                    <ul className="mt-2">
+                        {[...Array(candidateCount)].map((_, i) => (
+                            <li key={i}>
+                                Candidate {i + 1}: {votes[i] ?? 0} votes
+                            </li>
+                        ))}
+                    </ul>
+                )}
+
+                {/* Revealed salts */}
+                <div style={{ marginTop: "2rem" }}>
+                    <p className="text-lg font-semibold">🧾 Revealed Salts in Round {currentRound}</p>
+                    <div
+                        style={{
+                            maxHeight: "150px",
+                            overflowY: "auto",
+                            border: "1px solid #ccc",
+                            padding: "0.5rem",
+                            borderRadius: "8px",
+                            backgroundColor: "#f9f9f9"
+                        }}
+                    >
+                        <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
+                            {revealedSalts.length > 0 ? (
+                                revealedSalts.map((s, i) => <li key={i}>Salt: {s}</li>)
+                            ) : (
+                                <li>No salts revealed yet</li>
+                            )}
+                        </ul>
+                    </div>
+                </div>
             </div>
         )
     }
@@ -293,7 +324,8 @@ export default function ProofsPage() {
                                         }
                                         className={`button ${selectedCount > 0 ? "selected" : ""}`}
                                     >
-                                        {selectedCount === 2 ? "✅✅" : selectedCount === 1 ? "✅" : "📦"} Candidate {id}
+                                        {selectedCount === 2 ? "✅✅" : selectedCount === 1 ? "✅" : "📦"} Candidate{" "}
+                                        {id}
                                     </button>
                                 )
                             })}

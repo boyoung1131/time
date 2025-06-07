@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { Contract, InfuraProvider, JsonRpcProvider, Wallet } from "ethers"
 import FeedbackABI from "../../../../contract-artifacts/Feedback.json"
+import { setMaxListeners } from "events"
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS!
 const NETWORK = process.env.NEXT_PUBLIC_DEFAULT_NETWORK!
@@ -38,9 +39,12 @@ export async function GET(request: NextRequest) {
         }
 
         const [_, totals] = await contract.getFinalResultTotal(round)
-        const strTotals = totals.slice(1).map((v: any) => v.toString())
+        const numTotals = totals.slice(1).map((v: any) => Number(v))
 
-        return NextResponse.json({ totalVotes: strTotals })
+        const salts: bigint[] = await contract.getRevealedSalts(round)
+        const saltStrings = salts.map((s) => s.toString())
+
+        return NextResponse.json({ totalVotes: numTotals, salts: saltStrings })
     } catch (err: any) {
         console.error("GET /api/feedback error:", err)
         return NextResponse.json({ error: err.message || "Unknown error" }, { status: 500 })

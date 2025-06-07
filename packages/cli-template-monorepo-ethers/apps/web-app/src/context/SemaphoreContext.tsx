@@ -120,14 +120,9 @@ export const SemaphoreContextProvider: React.FC<{ children: ReactNode }> = ({ ch
 
     const getWinner = useCallback(async (round: number) => {
         try {
-            if (round === 1) {
-                const w = await feedbackContract.getFinalResult(1)
-                setWinner(Number(w))
-            } else {
-                const [w, totals] = await feedbackContract.getFinalResultTotal(round)
-                setWinner(Number(w))
-                setVotes(totals.slice(1).map((v: any) => Number(v)))
-            }
+            const [w, totals] = await feedbackContract.getFinalResultTotal(round)
+            setWinner(Number(w))
+            setVotes(totals.slice(1).map((v: any) => Number(v)))
         } catch (e) {
             console.error("getWinner error", e)
         }
