@@ -227,7 +227,7 @@ export default function ProofsPage() {
         return (
             <div>
                 {/* 顯示勝者資訊 */}
-                <p className="text-lg font-semibold">
+                <p style={{ fontSize: "1.5rem",fontWeight: 600,color:"#ffb3a7"}}>
                     {winners.length > 0
                         ? currentRound < totalRounds
                             ? `🏆 Round ${currentRound} Winner: Candidate ${winners.join(", ")}`
